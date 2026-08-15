@@ -111,8 +111,10 @@ publishing {
                 // Read from the environment only — never stored in the repository.
                 // Names match the GitHub repository secrets exactly, so there is
                 // one set of names to keep straight rather than two.
-                username = providers.environmentVariable("CENTRAL_TOKEN_USERNAME").orNull
-                password = providers.environmentVariable("CENTRAL_TOKEN_PASSWORD").orNull
+                // Trimmed: a token pasted into a secret often carries a trailing
+                // newline, which the server rejects as a bad credential.
+                username = providers.environmentVariable("CENTRAL_TOKEN_USERNAME").orNull?.trim()
+                password = providers.environmentVariable("CENTRAL_TOKEN_PASSWORD").orNull?.trim()
             }
         }
     }
@@ -124,7 +126,7 @@ signing {
     // ASCII-armoured private key read straight from the environment; it is never
     // written to disk or into a Gradle property.
     val signingKey = providers.environmentVariable("MAVEN_GPG_PRIVATE_KEY").orNull
-    val signingPassword = providers.environmentVariable("MAVEN_GPG_PASSPHRASE").orNull
+    val signingPassword = providers.environmentVariable("MAVEN_GPG_PASSPHRASE").orNull?.trim()
     if (!signingKey.isNullOrBlank()) {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications)

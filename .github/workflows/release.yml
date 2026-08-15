@@ -72,7 +72,21 @@ jobs:
             echo "::notice::skipping publish. See the Releasing section of README.md."
             exit 0
           fi
-          ./gradlew publishAllPublicationsToCentralRepository --no-configuration-cache
+          if ! ./gradlew publishAllPublicationsToCentralRepository --no-configuration-cache; then
+            echo "::error::Upload to Maven Central failed."
+            echo ""
+            echo "A 401 means the credentials were rejected. Two usual causes:"
+            echo "  1. CENTRAL_TOKEN_USERNAME holds the Sonatype account name"
+            echo "     rather than the generated token username. Both halves of"
+            echo "     the pair from https://central.sonatype.com/account are"
+            echo "     random strings; the username is not your login."
+            echo "  2. The token was pasted with surrounding whitespace. The"
+            echo "     build trims it, but regenerating the pair is reliable."
+            echo ""
+            echo "A 403 instead means the io.github.mgilbir namespace is not"
+            echo "verified for this account."
+            exit 1
+          fi
 
       - name: Collect artifacts
         run: |
