@@ -238,6 +238,18 @@ object FuzzMain {
      */
     private fun isKnownV8ModifierDeviation(expected: String): Boolean = expected.startsWith("%")
 
+    /**
+     * A fourth V8 defect, flagged by the oracle with "&".
+     *
+     * A non-multiline `$` lets V8 begin its scan near the end of the input. The
+     * offset is a minimum match length in code points applied to a UTF-16
+     * index, so an astral tail pushes the scan past a position that matches:
+     * `/[^\w]$/u.exec("\uD83D\uDE00")` is null while `/^[^\w]$/u` matches
+     * the same character, and `/v` gets it right. This engine matches over code
+     * points throughout; see EndAnchorAstralTest.
+     */
+    private fun isKnownV8EndAnchorDeviation(expected: String): Boolean = expected.startsWith("&")
+
     /** Compares one oracle answer with ours; returns a description on mismatch. */
     private fun check(c: Case, expected: String): String? {
         if (expected == "T") return null // oracle-side failure, nothing to compare
@@ -455,6 +467,7 @@ object FuzzMain {
         var skippedSurrogate = 0
         var skippedQuotedString = 0
         var skippedModifier = 0
+        var skippedEndAnchor = 0
         var stepLimited = 0
         for (i in cases.indices) {
             if (isKnownV8SurrogateDeviation(results[i])) {
@@ -467,6 +480,10 @@ object FuzzMain {
             }
             if (isKnownV8ModifierDeviation(results[i])) {
                 skippedModifier++
+                continue
+            }
+            if (isKnownV8EndAnchorDeviation(results[i])) {
+                skippedEndAnchor++
                 continue
             }
             val failure = check(cases[i], results[i]) ?: continue
@@ -483,6 +500,7 @@ object FuzzMain {
             if (skippedSurrogate > 0) add("$skippedSurrogate skipped: V8 surrogate defect")
             if (skippedQuotedString > 0) add("$skippedQuotedString skipped: V8 \\q{} folding defect")
             if (skippedModifier > 0) add("$skippedModifier skipped: V8 modifier scoping defect")
+            if (skippedEndAnchor > 0) add("$skippedEndAnchor skipped: V8 end-anchor astral defect")
             if (screenedOut > 0) add("$screenedOut screened out: exceed this engine's step budget")
             if (stepLimited > 0) add("$stepLimited step-limited")
         }

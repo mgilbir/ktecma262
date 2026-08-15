@@ -324,6 +324,29 @@ This engine scopes all of them, and `ModifierGroupTest` pins both directions
 down. Any modifier group combined with a word-class escape under `i` is skipped
 by the differential harnesses; it costs 180 of ~42,750 recorded cases.
 
+**A V8 defect skipping matches before an astral tail.** A non-multiline `$`
+lets V8 begin its scan near the end of the input rather than at position 0. The
+offset it jumps to is a minimum match length counted in code points but applied
+to a UTF-16 index, so an astral tail pushes the scan past a position that
+matches:
+
+```js
+/[^\w]$/u.exec("\u{1F600}")     // null in V8
+/^[^\w]$/u.test("\u{1F600}")    // true  — same class, same character
+/[^\w]$/uy.exec("\u{1F600}")    // matches at 0 with lastIndex 0
+/[^\w](?![\s\S])/u.exec(…)     // matches — same meaning, no `$`
+/[^\w]$/um.exec(…)              // matches — `m` disables the optimisation
+/[^\w]$/v.exec(…)               // matches — `v` is unaffected
+```
+
+Under `u` and `v` the input is a list of code points, so all of these ask the
+same question and the answer is a match at 0; V8 contradicts itself. This
+engine matches over code points throughout, and `EndAnchorAstralTest` pins it
+down. The differential harnesses detect it behaviourally — scanning code-point
+boundaries with a sticky copy of the same pattern and skipping the case when
+sticky finds a match that plain `exec` missed — rather than guessing which
+patterns trigger it. Found by the nightly fuzzer, one case in 500,000.
+
 ## Performance
 
 The engine parses to an AST, compiles to bytecode, and executes on a

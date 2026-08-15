@@ -66,6 +66,54 @@ export function hasModifierWithWordEscape(pattern, flags = "") {
   return flags.includes("i") || addsIgnoreCase;
 }
 
+/**
+ * Detects a fourth known V8 defect, so comparisons can skip it.
+ *
+ * A non-multiline `$` lets V8 start its scan near the end of the input instead
+ * of at position 0. The offset it jumps to is a minimum match length counted in
+ * code points, but it is applied to a UTF-16 index, so when the tail holds
+ * astral characters the scan begins past the position that would have matched:
+ *
+ *   /[^\w]$/u.exec("\u{1F600}")      // null in V8
+ *   /^[^\w]$/u.test("\u{1F600}")     // true  - same class, same character
+ *   /[^\w]$/uy.exec("\u{1F600}")     // matches at 0 with lastIndex 0
+ *   /[^\w](?![\s\S])/u.exec(...)   // matches - same meaning, no `$`
+ *   /[^\w]$/um.exec(...)            // matches - `m` disables the optimisation
+ *
+ * The spec matches over a list of code points, so all of these are the same
+ * question and the answer is a match at 0. V8 contradicts itself, which is what
+ * this checks: scan the code-point boundaries with a sticky copy of the same
+ * pattern, and report a defect when sticky finds a match that plain `exec`
+ * skipped. That tests the actual inconsistency rather than a guess about which
+ * patterns trigger it.
+ *
+ * The cheap conditions are checked first because the sticky scan is not free.
+ */
+export function hasEndAnchorAstralMiss(pattern, flags, input) {
+  if (!/[uv]/.test(flags)) return false;
+  if (flags.includes("m")) return false;
+  if (!pattern.includes("$")) return false;
+  if (!/[\uD800-\uDBFF][\uDC00-\uDFFF]/.test(input)) return false;
+
+  let plain, sticky;
+  try {
+    const base = flags.replace(/[gy]/g, "");
+    plain = new RegExp(pattern, base);
+    sticky = new RegExp(pattern, base + "y");
+  } catch {
+    return false;
+  }
+
+  const first = plain.exec(input);
+  for (let i = 0; i < input.length; ) {
+    if (first && first.index <= i) break;
+    sticky.lastIndex = i;
+    if (sticky.exec(input) !== null) return true;
+    i += input.codePointAt(i) > 0xffff ? 2 : 1;
+  }
+  return false;
+}
+
 /** Deterministic LCG, so a fuzz failure is reproducible from its seed. */
 export function rng(seed) {
   let s = seed >>> 0;

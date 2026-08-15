@@ -22,7 +22,11 @@
 // A leading "!", "~" or "%" marks a known V8 defect the comparison skips.
 
 import readline from "node:readline";
-import { hasSingleCharQuotedString, hasModifierWithWordEscape } from "./corpus.mjs";
+import {
+  hasSingleCharQuotedString,
+  hasModifierWithWordEscape,
+  hasEndAnchorAstralMiss,
+} from "./corpus.mjs";
 
 /** base64 of UTF-16LE code units -> string, preserving lone surrogates. */
 function decode(s) {
@@ -121,7 +125,9 @@ rl.on("line", (line) => {
         ? "~"
         : hasModifierWithWordEscape(pattern, flags)
           ? "%"
-          : "";
+          : hasEndAnchorAstralMiss(pattern, flags, input)
+            ? "&"
+            : "";
 
     if (op === "x") {
       re.lastIndex = 0;

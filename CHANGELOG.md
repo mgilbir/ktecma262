@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+No library changes — the engine behaves exactly as it does in 0.1.4.
+
+### Testing
+
+- A fourth V8 defect is recognised and skipped. A non-multiline `$` lets V8
+  start its scan near the end of the input, using a minimum match length
+  counted in code points but applied to a UTF-16 index, so an astral tail
+  pushes the scan past a position that matches: `/[^\w]$/u` finds nothing in
+  `"\u{1F600}"` while `/^[^\w]$/u`, `/[^\w]$/uy`, `/[^\w]$/um` and
+  `/[^\w]$/v` all match the same character. This engine matches over code
+  points throughout; `EndAnchorAstralTest` pins the behaviour down.
+
+  The detector is behavioural rather than syntactic: it scans code-point
+  boundaries with a sticky copy of the pattern and reports a defect only when
+  sticky finds a match plain `exec` skipped, so it tests V8's actual
+  self-contradiction instead of a guess about which patterns trigger it. Over
+  500,000 fuzz cases it excluded exactly one, and no recorded corpus case.
+
+  Found by a local fuzz run on `/([^\w]??){1,2}$\B(?!(?<=\b))/sug`.
+
 ## 0.1.4
 
 Republishes 0.1.3 complete. The library is unchanged; 0.1.3 reached Maven
@@ -184,7 +206,7 @@ backtracking cannot overflow the call stack. Matching is bounded by
 `RegExp.maxSteps` (default 1,000,000), and the budget spans a whole
 operation rather than each match.
 
-Three divergences from V8 are deliberate and documented in the README,
+Three divergences from V8 were deliberate and documented in the README,
 each covered by tests: match positions that split a surrogate pair under
 `/u`, single-character `\q{}` folding under `/vi`, and modifier scoping
 leaking into `\w`.
