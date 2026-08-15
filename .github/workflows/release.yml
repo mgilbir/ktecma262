@@ -2,6 +2,16 @@ name: Release
 
 # Publishes the artifacts for a version tag. The tag is the trigger, so the
 # released bits are always exactly what was tagged.
+#
+# Three jobs rather than one, because the work has three different homes:
+#
+#   verify   Linux. The full test suite and the differential fuzz — long, and
+#            there is no reason to pay macOS rates for it.
+#   publish  macOS. The only host that can compile every target: Apple targets
+#            need Xcode, and Kotlin/Native cross-compiles the Linux target from
+#            macOS, so one host produces the complete set of variants. Building
+#            on Linux is what shipped 0.1.2 with no native variants at all.
+#   release  Linux. Creates the GitHub release page from the changelog.
 on:
   push:
     tags: ["v*"]
@@ -11,8 +21,8 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Build and publish
+  verify:
+    name: Verify (Linux)
     runs-on: ubuntu-latest
 
     steps:
@@ -49,6 +59,15 @@ jobs:
           fi
           echo "Tag ${GITHUB_REF_NAME} matches project version ${version}."
 
+      - name: Check the changelog has a section for this version
+        # Fails here rather than after publishing, when the release notes are
+        # the only thing left and the artifacts are already immutable.
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+          ./.github/scripts/changelog-section.sh "$version" > /dev/null
+          echo "CHANGELOG.md has a section for $version."
+
       - name: Build and test
         # A release is never published from a red build.
         run: ./gradlew build --stacktrace
@@ -58,6 +77,31 @@ jobs:
 
       - name: Fuzz against node
         run: ./gradlew fuzz -Pcount=200000 -Pseed=${{ github.run_number }}
+
+  publish:
+    name: Build and publish (macOS)
+    needs: verify
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and test every target
+        run: ./gradlew build --stacktrace
+
+      - name: Check every declared target is in the module metadata
+        # The check that would have caught 0.1.2: a host that cannot build a
+        # target silently drops its variant, and the artifact publishes anyway.
+        run: ./gradlew verifyPublishedVariants
 
       - name: Publish to Maven Central
         env:
@@ -109,7 +153,7 @@ jobs:
 
           # Bearer credential is base64("user:pass"). It is masked immediately and
           # handed to curl on stdin, so it never appears in a process argument.
-          auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)
+          auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 | tr -d '\n')
           echo "::add-mask::$auth"
           hdr() { printf 'header = "Authorization: Bearer %s"\n' "$auth"; }
 
@@ -117,23 +161,31 @@ jobs:
           hdr | curl -sS -K - "$api/manual/search/repositories" | head -c 2000
           echo
 
-          code=$(hdr | curl -sS -K - -o /tmp/promote.json -w '%{http_code}' -X POST \
-            "$api/manual/upload/defaultRepository/$namespace?publishing_type=user_managed&deployment_name=ktecma262%20$version")
+          # publishing_type=automatic: the Portal validates the deployment and
+          # releases it without a manual step. `user_managed` would instead
+          # leave it waiting for someone to press Publish.
+          code=$(hdr | curl -sS -K - -o promote.json -w '%{http_code}' -X POST \
+            "$api/manual/upload/defaultRepository/$namespace?publishing_type=automatic&deployment_name=ktecma262%20$version")
           echo "HTTP $code"
-          cat /tmp/promote.json 2>/dev/null || true
+          cat promote.json 2>/dev/null || true
+          rm -f promote.json
           echo
           if [ "$code" != "200" ]; then
             echo "::error::Promoting the staging repository failed with HTTP $code."
             echo "A 400 usually means there was no open staging repository to push."
             exit 1
           fi
-          echo "Pushed to the Portal as a user-managed deployment."
-          echo "Release it at https://central.sonatype.com/publishing/deployments"
+          echo "Pushed to the Portal for automatic release."
+          echo "Publishing to Maven Central is irreversible; a version cannot be"
+          echo "replaced once it lands. Progress: https://central.sonatype.com/publishing/deployments"
 
       - name: Collect artifacts
         run: |
+          set -euo pipefail
           mkdir -p artifacts
-          find build/libs -name '*.jar' -exec cp {} artifacts/ \;
+          # klibs as well as jars: the native targets do not produce jars, and
+          # attaching only jars would make the release page look JVM-only.
+          find build/libs \( -name '*.jar' -o -name '*.klib' \) -exec cp {} artifacts/ \;
           ls -la artifacts/
 
       - name: Upload artifacts
@@ -142,3 +194,49 @@ jobs:
           name: ktecma262-artifacts
           path: artifacts/
           retention-days: 90
+
+  release:
+    name: GitHub release
+    needs: publish
+    # Only a tag names a version to release. A manual run publishes to Central
+    # but has no tag to hang a release page on.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      # The only job that writes to the repository.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v6
+        with:
+          name: ktecma262-artifacts
+          path: artifacts
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          # Notes come from the changelog, so the release page and the file in
+          # the repository cannot drift apart.
+          ./.github/scripts/changelog-section.sh "$version" > notes.md
+          echo "" >> notes.md
+          echo "Available from Maven Central as \`io.github.mgilbir:ktecma262:$version\`." >> notes.md
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; updating notes and assets."
+            gh release edit "$GITHUB_REF_NAME" --notes-file notes.md --latest
+            gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "ktecma262 $version" \
+              --notes-file notes.md \
+              --latest \
+              artifacts/*
+          fi
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${GITHUB_REF_NAME}"

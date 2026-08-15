@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.mgilbir"
-version = "0.1.2"
+version = "0.1.3"
 
 repositories {
     mavenCentral()
@@ -46,6 +46,19 @@ kotlin {
             }
         }
     }
+
+    // Native targets. The engine is pure common Kotlin, so these need only be
+    // declared — there is no native source set and no expect/actual anywhere.
+    //
+    // Apple targets can only be compiled on a macOS host, and Gradle disables
+    // them on any other, so a Linux build stays green while silently producing
+    // fewer variants. That is exactly how 0.1.2 shipped without native
+    // variants at all; the release workflow now builds on macOS, which can
+    // cross-compile the Linux target too, so one host produces the full set.
+    macosArm64()
+    iosArm64()
+    iosSimulatorArm64()
+    linuxX64()
 
     sourceSets {
         commonTest.dependencies {
@@ -137,6 +150,89 @@ signing {
 // javadoc jar to exist first.
 tasks.withType<AbstractPublishToMaven>().configureEach {
     dependsOn(tasks.withType<Sign>())
+}
+
+// Publication names, captured once Kotlin has created them. Kotlin creates a
+// publication only for targets the host can compile, so this set shrinks on a
+// host that cannot build them all.
+val publicationNames: SetProperty<String> = objects.setProperty(String::class.java)
+afterEvaluate {
+    publicationNames.set(publishing.publications.names.toSortedSet())
+}
+
+/**
+ * Fails when a declared target would not actually be published.
+ *
+ * The root module lists a variant for every *declared* target no matter which
+ * host generated it, but Kotlin creates a publication only for the targets
+ * that host can compile — Apple targets need a Mac. Publishing from anywhere
+ * else therefore uploads a root module pointing at artifacts that were never
+ * built, and nothing goes red until a consumer tries to resolve it.
+ *
+ * That is how 0.1.2 shipped: built on Linux, with no native variants at all,
+ * and immutable on Central by the time anyone noticed.
+ *
+ * Deliberately not wired into `check`, because on any host other than macOS it
+ * is *expected* to fail. The release workflow runs it on macOS, where the full
+ * set is buildable and a failure means something is genuinely wrong.
+ */
+val verifyPublishedVariants by tasks.registering {
+    group = "verification"
+    description = "Check every declared target will really be published"
+    dependsOn("generateMetadataFileForKotlinMultiplatformPublication")
+
+    // Read from the extension at configuration time, so adding a target to the
+    // build file extends this check automatically rather than needing a list
+    // here that can drift out of date.
+    val declaredTargets = kotlin.targets.names.toSortedSet()
+    val moduleFile = layout.buildDirectory.file("publications/kotlinMultiplatform/module.json")
+    val actual = publicationNames
+    inputs.file(moduleFile)
+
+    doLast {
+        // The common target's publication is named for the plugin, not the target.
+        val expected = declaredTargets.map { if (it == "metadata") "kotlinMultiplatform" else it }
+        val present = actual.get()
+        check(present.isNotEmpty()) { "no publications at all — the check would pass vacuously" }
+
+        val missing = expected.filterNot { it in present }
+        check(missing.isEmpty()) {
+            buildString {
+                appendLine("no publication for: ${missing.joinToString(", ")}")
+                appendLine()
+                appendLine("Declared targets: ${declaredTargets.joinToString(", ")}")
+                appendLine("Publications:     ${present.joinToString(", ")}")
+                appendLine()
+                appendLine(
+                    "Kotlin creates a publication only for targets the host can compile, " +
+                        "but the root module lists a variant for every declared target. " +
+                        "Publishing from this host would upload a module referencing " +
+                        "artifacts that were never built, and consumers would fail to " +
+                        "resolve the dependency.",
+                )
+                append("Apple targets require a macOS host.")
+            }
+        }
+
+        // Non-vacuity: the root module must actually carry variants for them.
+        @Suppress("UNCHECKED_CAST")
+        val parsed = groovy.json.JsonSlurper().parse(moduleFile.get().asFile) as Map<String, Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        val variants = (parsed["variants"] as? List<Map<String, Any?>>).orEmpty()
+        val variantNames = variants.mapNotNull { it["name"] as? String }
+        val unlisted = declaredTargets
+            .filter { it != "metadata" }
+            .filter { target -> variantNames.none { it.startsWith(target) } }
+        check(unlisted.isEmpty()) {
+            "the root module has no variant for: ${unlisted.joinToString(", ")}"
+        }
+
+        logger.lifecycle(
+            "verified all ${declaredTargets.size} declared targets are published " +
+                "(${variantNames.size} variants)",
+        )
+    }
 }
 
 // Live differential fuzzing against a real JavaScript engine. Deliberately not

@@ -21,7 +21,7 @@ code and need identical results.
 
 ```kotlin
 dependencies {
-    implementation("io.github.mgilbir:ktecma262:0.1.2")
+    implementation("io.github.mgilbir:ktecma262:0.1.3")
 }
 ```
 
@@ -31,8 +31,15 @@ dependencies {
 > repositories, or take the jars from the
 > [release page](https://github.com/mgilbir/ktecma262/releases).
 
-**Targets:** JVM and JS today; the engine is pure `commonMain` Kotlin with no
-`java.*` dependencies, so other Kotlin targets need only a build-file change.
+**Targets:** JVM, JS, `linuxX64`, `macosArm64`, `iosArm64` and
+`iosSimulatorArm64`. The engine is pure `commonMain` Kotlin with no `java.*`
+dependencies and no `expect`/`actual` anywhere, so adding a further target is a
+one-line build-file change.
+
+Apple targets can only be compiled on a macOS host, and Kotlin drops a target
+the host cannot build without failing the build — so releases are published
+from macOS, and `./gradlew verifyPublishedVariants` fails if any declared
+target would be left out of the publication.
 
 **JVM bytecode is Java 17** (class file major version 61), so the library can be
 consumed from modules targeting 17. This is enforced by a build check that reads
@@ -196,9 +203,12 @@ refuses to write the fixture unless all of them agree.
 
 Correctness rests on four layers:
 
-1. **Recorded differential suite** — ~36,000 pattern/flags/input cases whose
+1. **Recorded differential suite** — ~42,750 pattern/flags/input cases whose
    expected results were captured from node, replayed on every build on every
-   platform. Regenerate with `node tools/difftest/gen-fixture.mjs …`.
+   platform. Regenerate with
+   `node tools/difftest/gen-fixture.mjs src/commonTest/kotlin/io/github/mgilbir/ecma262/DiffFixture.kt 12`
+   — the trailing `12` is the number of inputs sampled per pattern, and
+   changing it changes the whole corpus.
 2. **Live fuzzing** — random patterns and inputs compared against a running node
    for `exec`, all-matches, `replace` and `split`. Millions of cases have been
    run clean; it is what found the surrogate backreference bug that
@@ -299,9 +309,20 @@ it down.
 /(?i:c)d/u.test("cD")    // false — literals are scoped correctly
 ```
 
-Only an *added* `i` is affected; `(?m:…)`, `(?s:…)` and `(?-i:…)` scope
-correctly. This engine scopes all of them, and `ModifierGroupTest` pins it
-down.
+It goes wrong in the other direction too. A *negated* class loses the case
+extension it should have as soon as any modifier group appears — even one that
+only removes flags — while a bare `\w` in the same pattern keeps it, so V8
+contradicts itself within one pattern:
+
+```js
+/(?-i:a)?[^\w]/vi.exec("aſ")  // matches in V8 — ſ folds to "s", so [^\w]
+/(?:a)?[^\w]/vi.exec("aſ")    // null, as it should be
+/(?-i:a)?\w/vi.test("ſ")      // true — the positive form is still extended
+```
+
+This engine scopes all of them, and `ModifierGroupTest` pins both directions
+down. Any modifier group combined with a word-class escape under `i` is skipped
+by the differential harnesses; it costs 180 of ~42,750 recorded cases.
 
 ## Performance
 
@@ -331,15 +352,23 @@ Reproduce with `./gradlew bench`.
 
 ## Releasing
 
-Tagging is the trigger: `.github/workflows/release.yml` runs on a `v*` tag,
-checks the tag against the version in `build.gradle.kts`, builds, runs the full
-test suite and 200,000 fuzz cases, then publishes.
+Tagging is the trigger: `.github/workflows/release.yml` runs on a `v*` tag and
+does the whole release. It checks the tag against the version in
+`build.gradle.kts` and that the changelog has a section for it, builds and runs
+the full test suite plus 200,000 fuzz cases on Linux, then rebuilds every
+target on macOS, publishes, releases to Maven Central, and creates the GitHub
+release page with notes from `CHANGELOG.md` and the jars attached.
+
+Two things about that are deliberate. Publishing happens from **macOS** because
+it is the only host that can compile every target. And the Central deployment
+is released **automatically** — publishing a version is irreversible, and a
+tag is the point of no return, not a later button.
 
 ```bash
 # 1. bump `version` in build.gradle.kts, commit
 # 2. tag and push
-git tag -a v0.1.2 -m "ktecma262 0.1.2"
-git push origin v0.1.2
+git tag -a v0.1.3 -m "ktecma262 0.1.3"
+git push origin v0.1.3
 ```
 
 Publication is skipped — with a notice, not a failure — unless these repository
@@ -357,10 +386,17 @@ It also needs the `io.github.mgilbir` namespace verified in the Central portal.
 Credentials are only ever read from the environment — never from a file in the
 repository, and never written to one.
 
-Uploading is not the last step: the build deploys through the OSSRH Staging API
-bridge, so the result lands as a *deployment* in the Central portal. Unless
-automatic publishing is enabled for the namespace, release it from
-[central.sonatype.com](https://central.sonatype.com/publishing/deployments).
+Uploading is not the last step. The build deploys through the OSSRH Staging API
+bridge, which leaves the artifacts in *its own* staging repository — they never
+reach the Central portal until something pushes them across:
+
+```
+POST /manual/upload/defaultRepository/{namespace}?publishing_type=automatic
+```
+
+The workflow makes that call after publishing. Skipping it is why 0.1.2
+uploaded successfully while the deployments list stayed empty. Watch progress
+at [central.sonatype.com](https://central.sonatype.com/publishing/deployments).
 
 To check the artifacts without publishing anything:
 

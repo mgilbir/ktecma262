@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.1.3
+
+Adds native targets and fixes a parser bug found by the nightly fuzzer.
+
+### Added
+
+- `macosArm64`, `iosArm64`, `iosSimulatorArm64` and `linuxX64` targets. The
+  engine is pure `commonMain` Kotlin with no `expect`/`actual`, so the sources
+  are unchanged; all 153 tests run on Kotlin/Native exactly as they do on JVM
+  and JS, including the ~42,750-case recorded differential suite.
+
+### Fixed
+
+- Annex B's fallback for an invalid `\c` consumed the `c`. Both
+  `ExtendedAtom :: \ [lookahead = c]` and `ClassAtomNoDash :: \ [lookahead = c]`
+  denote the backslash **alone**, leaving the `c` to be parsed as the next
+  atom, so anything binding to it bound to the wrong thing:
+
+  - a quantifier covered both characters, making them jointly optional —
+    `/a\c*/` matched a bare "a", where the pattern is `a`, `\`, `c*` and
+    requires a literal backslash;
+  - in a class the `c` could not open a range, so `[\c-z]` was the three
+    characters `\`, `c`, `-` rather than `\` plus `c-z`.
+
+  Found by the nightly differential fuzzer on `/a\c*{?/ig`, one case in
+  500,000. The class-range half was not reached by the fuzzer and came out of
+  reading the grammar while fixing the first.
+
+### Testing
+
+- A second direction of the known V8 modifier-scoping defect is now recognised
+  and skipped. The presence of a modifier group makes V8 drop the case
+  extension from a *negated* word class — `/(?-i:a)?[^\w]/vi` matches the long
+  s, which folds to "s" and so belongs to `\w` — while a bare `\w` in the same
+  pattern keeps the extension, so V8 contradicts itself. Previously only an
+  *added* `i` was recognised, on the belief that `(?-i:…)` scoped correctly.
+  This engine's behaviour is unchanged and matches V8's own answer once the
+  modifier group is removed; `ModifierGroupTest` now pins both directions.
+  Broadening the skip costs 180 of ~42,750 recorded cases.
+- The recorded corpus covers the `\c` fallback in all three modes, and grew
+  from 41,271 to 42,753 cases.
+
+### Release process
+
+None of this changes the library, but all of it is why 0.1.2 was unusable for
+native consumers.
+
+- Releases are now built and published from macOS. It is the only host that
+  can compile every target: Apple targets need Xcode, and Kotlin/Native
+  cross-compiles the Linux target from macOS.
+- `./gradlew verifyPublishedVariants` fails when a declared target would not
+  actually be published. Kotlin creates a publication only for targets the
+  host can build, while the root module lists a variant for every declared
+  target — so publishing from the wrong host uploads a module referencing
+  artifacts that do not exist.
+- CI builds every target on macOS on each push, rather than discovering Apple
+  breakage on release day.
+- The GitHub release page is created by the release workflow, with notes taken
+  from this file and the jars attached. `v0.1.1` and `v0.1.2` were tagged and
+  published without one. The workflow fails early if the changelog has no
+  section for the version being released, rather than after the artifacts are
+  already immutable.
+- The Central deployment is released automatically (`publishing_type=automatic`)
+  instead of waiting for a manual Publish. Pushing a tag is now the point of no
+  return.
+
 ## 0.1.2
 
 No library changes: the compiled artifacts are byte-for-byte identical to
@@ -27,6 +93,11 @@ from JavaScript, so V8 ran at full CPU until the run was cancelled.
   left node spinning indefinitely.
 
 `v0.1.1` remains as a tag but was never published.
+
+**0.1.2 has JVM, JS and common variants only.** A Kotlin Multiplatform build
+that declares a native target cannot resolve it, and — because Gradle takes the
+first repository holding a coordinate — it will shadow a locally published
+build of the same version. Use 0.1.3.
 
 ## 0.1.1
 

@@ -164,4 +164,43 @@ class ModifierGroupTest {
         assertEquals("c", match("(?<=(?i:ab))c", "ABc"))
         assertNull(match("(?<=(?-i:ab))c", "ABc", "i"))
     }
+
+    /**
+     * A modifier group must not change how word characters are built outside it.
+     *
+     * Under `i` with `u` or `v`, WordCharacters is extended with the characters
+     * that case-fold into it — U+017F LATIN SMALL LETTER LONG S folds to "s",
+     * so it is a word character and `[^\w]` must exclude it.
+     *
+     * V8 drops that extension for a *negated* class as soon as any modifier
+     * group appears, even one that only removes flags, while leaving a bare
+     * `\w` in the same pattern extended — so it contradicts itself. Both cases
+     * below came from the nightly fuzzer; the expectations are what V8 itself
+     * produces once the modifier group is removed.
+     */
+    @Test
+    fun modifierGroupDoesNotDisturbWordCharactersOutsideIt() {
+        val longS = "ſ"
+
+        // Positive form: the long s is a word character under `iu`, with or
+        // without a modifier group present.
+        assertEquals(longS, match("(?s-i:^)\\w", longS, "imsu"))
+        assertEquals(longS, match("\\w", longS, "iu"))
+
+        // Negated form: it must therefore be excluded. V8 matches "ſΣ" here.
+        assertNull(match("(?s-i:^)[^\\w]{2,}", "ſΣbσäc", "imsu"))
+        // Same pattern without the modifier group — V8 agrees with us on this one.
+        assertNull(match("(?:^)[^\\w]{2,}", "ſΣbσäc", "imsu"))
+
+        // The `v`-flag case, where the group only removes `i`. V8 matches
+        // "\uDE00ſ"; the long s belongs to `\w`, so only the lone
+        // surrogate does.
+        val input = "c\uDE00ſ_Käxσσ\nÄ"
+        assertEquals("\uDE00", match("(?:(?-i:a*)){2}[^\\w]{1,2}", input, "vi"))
+        assertEquals("\uDE00", match("(?:(?:a*)){2}[^\\w]{1,2}", input, "vi"))
+
+        // Without `i` there is no case extension at all, so the long s is not a
+        // word character and both characters match.
+        assertEquals("\uDE00ſ", match("(?:(?-i:a*)){2}[^\\w]{1,2}", input, "v"))
+    }
 }

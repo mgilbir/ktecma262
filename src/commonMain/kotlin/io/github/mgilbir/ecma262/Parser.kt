@@ -545,7 +545,7 @@ internal class Parser(
             'k' -> parseNamedBackreference(backslash)
             '0' -> parseZeroEscape(backslash)
             in '1'..'9' -> parseDecimalEscape(backslash)
-            'c' -> parseControlEscape(backslash, inClass = false)
+            'c' -> Literal(parseControlEscape(backslash, inClass = false))
             else -> Literal(parseCharacterEscape(inClass = false))
         }
     }
@@ -688,10 +688,21 @@ internal class Parser(
     }
 
     /**
-     * `\cX`. Under Annex B a character class additionally admits digits and `_`,
-     * and an invalid control escape degrades to the literal text `\c`.
+     * `\cX`, returning the code point it denotes. Under Annex B a character
+     * class additionally admits digits and `_` as the control letter.
+     *
+     * An invalid control escape does *not* degrade to the two-character text
+     * `\c`. Annex B's `ExtendedAtom :: \ [lookahead = c]` and
+     * `ClassAtomNoDash :: \ [lookahead = c]` both denote the backslash alone,
+     * consuming only it and leaving the `c` to be parsed as the next atom.
+     *
+     * The distinction is invisible until something binds to the `c`. A
+     * quantifier is the common case: the pattern `a\c*` is `a`, `\`, `c*`,
+     * which cannot match "a" — where treating `\c` as one atom makes the
+     * quantifier optional over both characters, so "a" matches on its own.
+     * A class range is the other: `[\c-z]` is the backslash plus `c-z`.
      */
-    private fun parseControlEscape(backslash: Int, inClass: Boolean): Expr {
+    private fun parseControlEscape(backslash: Int, inClass: Boolean): Int {
         val letter = peekAt(1)
         val valid = letter != null && (
             letter.isAsciiLetter() ||
@@ -700,14 +711,13 @@ internal class Parser(
 
         if (valid) {
             pos += 2
-            return Literal(letter!!.code % 32)
+            return letter!!.code % 32
         }
 
         if (!annexB) fail("invalid control escape", backslash)
 
-        // Not a control escape at all: the backslash and the 'c' are both literal.
-        advance() // 'c'
-        return Sequence(listOf(Literal('\\'.code), Literal('c'.code)))
+        // Only the backslash is consumed: [pos] stays on the `c`.
+        return '\\'.code
     }
 
     /**
@@ -895,11 +905,7 @@ internal class Parser(
                 }
             }
 
-            'c' -> when (val node = parseControlEscape(backslash, inClass = true)) {
-                is Literal -> listOf(ClassLiteral(node.codePoint))
-                is Sequence -> node.elements.map { ClassLiteral((it as Literal).codePoint) }
-                else -> error("unreachable control escape node")
-            }
+            'c' -> listOf(ClassLiteral(parseControlEscape(backslash, inClass = true)))
 
             // Inside a class there are no backreferences: `\1` is a legacy octal
             // escape under Annex B, and an error under Unicode mode.

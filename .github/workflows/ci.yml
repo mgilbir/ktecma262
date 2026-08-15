@@ -15,23 +15,28 @@ permissions:
 
 jobs:
   build:
-    # Linux runs the full build: JVM tests, JS tests, and the check that the
-    # emitted class files really are Java 17 bytecode. The other platforms run
-    # the JVM tests, which is what would catch a platform-dependent difference
-    # in the engine itself; the JS toolchain is identical everywhere because
-    # Gradle downloads its own node.
+    # Linux runs JVM, JS and the Linux native target, plus the check that the
+    # emitted class files really are Java 17 bytecode.
+    #
+    # macOS is not a duplicate of it: the Apple targets can only be compiled
+    # there, so without this job they would first be built on the day of a
+    # release. It also carries the variant check, since macOS is the one host
+    # that can build the complete set.
+    #
+    # Windows runs the JVM tests, which is what would catch a platform-dependent
+    # difference in the engine itself.
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Build and test (Linux, JVM + JS)
+          - name: Build and test (Linux, JVM + JS + linuxX64)
             os: ubuntu-latest
             task: build
-          - name: JVM tests (macOS)
+          - name: Build and test (macOS, all targets)
             os: macos-latest
-            task: jvmTest
+            task: build
           - name: JVM tests (Windows)
             os: windows-latest
             task: jvmTest
@@ -51,6 +56,13 @@ jobs:
       - name: ${{ matrix.task }}
         shell: bash
         run: ./gradlew ${{ matrix.task }} --stacktrace
+
+      - name: Check every declared target is in the module metadata
+        # macOS only: it is the one host that can build the complete set, so
+        # anywhere else this is expected to fail. Running it on every push is
+        # what turns "the release dropped a target" into a pull request failure.
+        if: matrix.os == 'macos-latest'
+        run: ./gradlew verifyPublishedVariants
 
       - name: Upload test reports
         if: failure()

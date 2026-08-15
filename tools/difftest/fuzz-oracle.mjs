@@ -119,7 +119,7 @@ rl.on("line", (line) => {
       ? "!"
       : hasSingleCharQuotedString(pattern, flags)
         ? "~"
-        : hasModifierWithWordEscape(pattern)
+        : hasModifierWithWordEscape(pattern, flags)
           ? "%"
           : "";
 
