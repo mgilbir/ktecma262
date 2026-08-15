@@ -21,7 +21,7 @@ code and need identical results.
 
 ```kotlin
 dependencies {
-    implementation("io.github.mgilbir:ktecma262:0.1.0")
+    implementation("io.github.mgilbir:ktecma262:0.1.1")
 }
 ```
 
@@ -338,8 +338,8 @@ test suite and 200,000 fuzz cases, then publishes.
 ```bash
 # 1. bump `version` in build.gradle.kts, commit
 # 2. tag and push
-git tag -a v0.1.0 -m "ktecma262 0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "ktecma262 0.1.1"
+git push origin v0.1.1
 ```
 
 Publication is skipped — with a notice, not a failure — unless these repository
