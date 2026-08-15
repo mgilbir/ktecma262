@@ -1,5 +1,7 @@
 # ktecma262
 
+[![CI](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml/badge.svg)](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml)
+
 An ECMA-262 (JavaScript) regular expression engine in pure Kotlin, for Kotlin
 Multiplatform.
 
@@ -208,6 +210,27 @@ Correctness rests on four layers:
 The fuzzer also generates unstructured "syntax soup" patterns, not just ones its
 own grammar knows how to build — that is what checks the parser against
 constructs this codebase has never heard of.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+- the full build on Linux — JVM tests, JS tests, and the Java 17 bytecode check;
+- the JVM tests on macOS and Windows, which is where a platform-dependent
+  difference in the engine would show up (the JS toolchain is identical
+  everywhere, since Gradle downloads its own node);
+- 100,000 live fuzz cases against node, with a seed that varies per run and is
+  printed so a failure reproduces exactly.
+
+The offline suites need no JavaScript engine — they replay recorded results — so
+only the fuzz job pins a node version. It is guarded: CI fails with a clear
+message if node's Unicode version does not match the compiled tables, because
+otherwise every `\p{…}` case would disagree for reasons unrelated to the engine.
+
+`.github/workflows/nightly.yml` runs the longer checks: 1.5M fuzz cases across
+three seeds, and a drift check that regenerates the Unicode tables from upstream
+and re-verifies every property against node. The drift job is expected to fail
+when Unicode publishes new data — that is the signal to regenerate.
 
 ## Notes for contributors
 

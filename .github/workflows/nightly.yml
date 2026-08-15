@@ -1,0 +1,96 @@
+name: Nightly
+
+# Longer checks than a pull request should wait for, plus the ones that depend
+# on upstream data and can therefore start failing without anything in this
+# repository changing.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzz_count:
+        description: Cases per seed
+        default: "500000"
+
+permissions:
+  contents: read
+
+jobs:
+  deep-fuzz:
+    name: Deep differential fuzz (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check node's Unicode version matches the tables
+        run: ./.github/scripts/check-node-unicode.sh
+
+      - name: Fuzz
+        run: >
+          ./gradlew fuzz
+          -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
+          -Pseed=${{ matrix.seed }}${{ github.run_number }}
+
+  unicode-drift:
+    # Regenerates the tables from upstream and fails if they differ from the
+    # committed ones. A failure here usually means Unicode published new data
+    # (the emoji sequence files track "latest"), not that anything is broken —
+    # but it is exactly when the tables need regenerating and re-verifying.
+    name: Unicode data drift
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Check node's Unicode version matches the tables
+        run: ./.github/scripts/check-node-unicode.sh
+
+      - name: Download the UCD
+        run: ./tools/genunicode/fetch-ucd.sh "$RUNNER_TEMP/ucd" 17.0.0
+
+      - name: Regenerate the tables
+        run: >
+          node tools/genunicode/gen.mjs "$RUNNER_TEMP/ucd"
+          src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt
+
+      - name: Fail if the committed tables are stale
+        run: |
+          if ! git diff --exit-code --stat -- \
+              src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt; then
+            echo "::error::Regenerating from upstream produced different tables."
+            echo "Upstream Unicode data has changed. Regenerate and re-verify:"
+            echo "  see the Unicode section of README.md"
+            exit 1
+          fi
+          echo "Tables match a fresh generation from upstream."
+
+      - name: Verify every property against node
+        # Independent of the diff above: this checks the tables against the
+        # engine's own Unicode data, code point by code point.
+        run: >
+          node tools/genunicode/verify-against-node.mjs
+          src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt

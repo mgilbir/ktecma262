@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Linux runs the full build: JVM tests, JS tests, and the check that the
+    # emitted class files really are Java 17 bytecode. The other platforms run
+    # the JVM tests, which is what would catch a platform-dependent difference
+    # in the engine itself; the JS toolchain is identical everywhere because
+    # Gradle downloads its own node.
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Build and test (Linux, JVM + JS)
+            os: ubuntu-latest
+            task: build
+          - name: JVM tests (macOS)
+            os: macos-latest
+            task: jvmTest
+          - name: JVM tests (Windows)
+            os: windows-latest
+            task: jvmTest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: ${{ matrix.task }}
+        shell: bash
+        run: ./gradlew ${{ matrix.task }} --stacktrace
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: |
+            build/reports/tests/
+            build/test-results/
+          retention-days: 7
+
+  fuzz:
+    # The recorded corpus in the build job replays results captured earlier;
+    # this compares against a live JavaScript engine, which is what finds cases
+    # nobody thought to record.
+    name: Differential fuzz against node
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          # Must carry the same Unicode version as the compiled tables; the next
+          # step fails loudly if it does not.
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check node's Unicode version matches the tables
+        run: ./.github/scripts/check-node-unicode.sh
+
+      - name: Fuzz
+        # The seed varies per run so successive builds explore different cases,
+        # and it is printed so any failure can be reproduced exactly.
+        run: ./gradlew fuzz -Pcount=100000 -Pseed=${{ github.run_number }}
