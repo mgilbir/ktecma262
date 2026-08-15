@@ -1,0 +1,88 @@
+name: Release
+
+# Publishes the artifacts for a version tag. The tag is the trigger, so the
+# released bits are always exactly what was tagged.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Check the tag matches the project version
+        # Guards against tagging v0.2.0 while the build still says 0.1.0, which
+        # would publish artifacts that disagree with their own tag.
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            echo "Manual run; skipping tag/version comparison."
+            exit 0
+          fi
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+          if [ "$tag" != "$version" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match project version ${version}."
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches project version ${version}."
+
+      - name: Build and test
+        # A release is never published from a red build.
+        run: ./gradlew build --stacktrace
+
+      - name: Check node's Unicode version matches the tables
+        run: ./.github/scripts/check-node-unicode.sh
+
+      - name: Fuzz against node
+        run: ./gradlew fuzz -Pcount=200000 -Pseed=${{ github.run_number }}
+
+      - name: Publish to Maven Central
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MAVEN_CENTRAL_USERNAME:-}" ] || [ -z "${SIGNING_KEY:-}" ]; then
+            echo "::notice::Maven Central credentials or signing key not configured;"
+            echo "::notice::skipping publish. See the Releasing section of README.md."
+            exit 0
+          fi
+          ./gradlew publishAllPublicationsToCentralRepository --no-configuration-cache
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          find build/libs -name '*.jar' -exec cp {} artifacts/ \;
+          ls -la artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ktecma262-artifacts
+          path: artifacts/
+          retention-days: 90

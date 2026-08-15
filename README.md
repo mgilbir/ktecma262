@@ -25,6 +25,12 @@ dependencies {
 }
 ```
 
+> Publishing to Maven Central needs a verified `io.github.mgilbir` namespace and
+> a signing key. Until those are configured (see [Releasing](#releasing)), build
+> from source with `./gradlew publishToMavenLocal` and add `mavenLocal()` to your
+> repositories, or take the jars from the
+> [release page](https://github.com/mgilbir/ktecma262/releases).
+
 **Targets:** JVM and JS today; the engine is pure `commonMain` Kotlin with no
 `java.*` dependencies, so other Kotlin targets need only a build-file change.
 
@@ -322,6 +328,40 @@ Compilation is ~0.5 µs for a simple pattern; a `\p{…}` pattern costs ~40 µs
 because the property table is decoded per compile, so compile once and reuse.
 
 Reproduce with `./gradlew bench`.
+
+## Releasing
+
+Tagging is the trigger: `.github/workflows/release.yml` runs on a `v*` tag,
+checks the tag against the version in `build.gradle.kts`, builds, runs the full
+test suite and 200,000 fuzz cases, then publishes.
+
+```bash
+# 1. bump `version` in build.gradle.kts, commit
+# 2. tag and push
+git tag -a v0.1.0 -m "ktecma262 0.1.0"
+git push origin v0.1.0
+```
+
+Publication to Maven Central is skipped — with a notice, not a failure — until
+these repository secrets exist:
+
+| Secret | What it is |
+| --- | --- |
+| `MAVEN_CENTRAL_USERNAME` | Sonatype Central token username |
+| `MAVEN_CENTRAL_PASSWORD` | Sonatype Central token password |
+| `SIGNING_KEY` | ASCII-armoured GPG private key |
+| `SIGNING_PASSWORD` | Passphrase for that key |
+
+It also needs the `io.github.mgilbir` namespace verified in the Central portal.
+Nothing else in the build reads credentials, and they are only ever taken from
+the environment — never from a file in the repository.
+
+To check the artifacts without publishing anything:
+
+```bash
+./gradlew publishToMavenLocal
+ls ~/.m2/repository/io/github/mgilbir/
+```
 
 ## Known limitations
 

@@ -2,10 +2,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("multiplatform") version "2.2.0"
+    `maven-publish`
+    signing
 }
 
 group = "io.github.mgilbir"
-version = "0.1.0-SNAPSHOT"
+version = "0.1.0"
 
 repositories {
     mavenCentral()
@@ -54,6 +56,81 @@ kotlin {
 
 tasks.withType<JavaCompile>().configureEach {
     options.release.set(17)
+}
+
+// ----------------------------------------------------------------- publishing
+
+// Maven Central requires a javadoc artifact. The API documentation lives in
+// KDoc on the source, which is published in the sources jar Kotlin Multiplatform
+// generates, so this is a placeholder rather than a second copy of the docs.
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        artifact(javadocJar)
+        pom {
+            name.set("ktecma262")
+            description.set(
+                "An ECMA-262 (JavaScript) regular expression engine in pure Kotlin, " +
+                    "for Kotlin Multiplatform.",
+            )
+            url.set("https://github.com/mgilbir/ktecma262")
+            licenses {
+                license {
+                    name.set("MIT License")
+                    url.set("https://github.com/mgilbir/ktecma262/blob/main/LICENSE")
+                    distribution.set("repo")
+                }
+            }
+            developers {
+                developer {
+                    id.set("mgilbir")
+                    name.set("Miguel Eduardo Gil Biraud")
+                    url.set("https://github.com/mgilbir")
+                }
+            }
+            scm {
+                url.set("https://github.com/mgilbir/ktecma262")
+                connection.set("scm:git:https://github.com/mgilbir/ktecma262.git")
+                developerConnection.set("scm:git:ssh://git@github.com/mgilbir/ktecma262.git")
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = "central"
+            // Overridable so the same build can target a staging repository.
+            url = uri(
+                providers.gradleProperty("centralRepositoryUrl").orNull
+                    ?: "https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/",
+            )
+            credentials {
+                // Read from the environment only — never stored in the repository.
+                username = providers.environmentVariable("MAVEN_CENTRAL_USERNAME").orNull
+                password = providers.environmentVariable("MAVEN_CENTRAL_PASSWORD").orNull
+            }
+        }
+    }
+}
+
+signing {
+    // Signing is required to publish to Maven Central and irrelevant locally, so
+    // it switches itself on only when a key is supplied.
+    val signingKey = providers.environmentVariable("SIGNING_KEY").orNull
+    val signingPassword = providers.environmentVariable("SIGNING_PASSWORD").orNull
+    if (!signingKey.isNullOrBlank()) {
+        useInMemoryPgpKeys(signingKey, signingPassword)
+        sign(publishing.publications)
+    }
+}
+
+// Gradle cannot infer that each publication's signing task needs the shared
+// javadoc jar to exist first.
+tasks.withType<AbstractPublishToMaven>().configureEach {
+    dependsOn(tasks.withType<Sign>())
 }
 
 // Live differential fuzzing against a real JavaScript engine. Deliberately not
