@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.1.2
+
+No library changes: the compiled artifacts are byte-for-byte identical to
+the 0.1.1 tag. This version exists only because the 0.1.1 release never
+completed.
+
+Its release run hung for over an hour in the differential fuzz step. The
+fuzzer deliberately generates patterns that are catastrophic for a
+backtracker; this engine bounds them with a step budget, but the node
+process used as the oracle has no such limit and cannot be interrupted
+from JavaScript, so V8 ran at full CPU until the run was cancelled.
+
+### Fixed (test infrastructure only)
+
+- Cases that exceed this engine's step budget are now screened out before
+  being sent to the oracle. The comparison already skipped them, so no
+  coverage is lost, and the failing seed now completes in 37 seconds.
+- A watchdog kills the oracle after two minutes without output and names
+  the case it stopped on.
+- The oracle streams results instead of buffering them until close, so
+  progress is no longer lost when it is killed.
+- The oracle's stderr is inherited rather than left in an undrained pipe,
+  which could have blocked it.
+- The oracle process is destroyed on shutdown; a cancelled run previously
+  left node spinning indefinitely.
+
+`v0.1.1` remains as a tag but was never published.
+
 ## 0.1.1
 
 Fixes a parser bug found by the differential fuzzer immediately after 0.1.0
