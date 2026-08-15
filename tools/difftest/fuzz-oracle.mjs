@@ -72,10 +72,29 @@ function hasSurrogateSplitMatch(re, input, allMatches) {
 }
 
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
-const out = [];
+
+/**
+ * Writes each result as it is produced.
+ *
+ * Buffering everything until close held the whole run in memory and, worse, hid
+ * how far the oracle had got when a pattern made V8 spin — the output was lost
+ * with the process.
+ */
+const emit = (line) => process.stdout.write(line + "\n");
+
+/**
+ * With FUZZ_TRACE=1, logs each case before running it, so the last line on
+ * stderr names the case that hung.
+ *
+ * V8's regular expression engine cannot be interrupted from JavaScript and has
+ * no step limit, so a catastrophic pattern runs until the process is killed.
+ * Tracing is the only way to find which case it was.
+ */
+const trace = process.env.FUZZ_TRACE === "1";
 
 rl.on("line", (line) => {
   if (!line) return;
+  if (trace) process.stderr.write(`CASE ${line}\n`);
   const [op, p, f, s, extra] = line.split(" ");
   try {
     const pattern = decode(p);
@@ -86,7 +105,7 @@ rl.on("line", (line) => {
     try {
       re = new RegExp(pattern, flags);
     } catch {
-      out.push("E");
+      emit("E");
       return;
     }
 
@@ -107,27 +126,27 @@ rl.on("line", (line) => {
     if (op === "x") {
       re.lastIndex = 0;
       const m = re.exec(input);
-      out.push(mark + (m === null ? "N" : `M ${renderMatch(m)}`));
+      emit(mark + (m === null ? "N" : `M ${renderMatch(m)}`));
     } else if (op === "a") {
       // matchAll is the spec's own definition of "every non-overlapping match",
       // including how it steps past an empty one.
       const all = [...input.matchAll(re)];
-      out.push(mark + `A ${all.length} ${all.map(renderMatch).join(" | ")}`);
+      emit(mark + `A ${all.length} ${all.map(renderMatch).join(" | ")}`);
     } else if (op === "r") {
       re.lastIndex = 0;
-      out.push(mark + `R ${encode(input.replace(re, decode(extra)))}`);
+      emit(mark + `R ${encode(input.replace(re, decode(extra)))}`);
     } else {
       re.lastIndex = 0;
       const limit = Number(decode(extra));
       const parts = limit < 0 ? input.split(re) : input.split(re, limit);
       const rendered = parts.map((x) => (x === undefined ? "-" : encode(x)));
-      out.push(mark + `S ${parts.length} ${rendered.join(" ")}`);
+      emit(mark + `S ${parts.length} ${rendered.join(" ")}`);
     }
   } catch {
-    out.push("T");
+    emit("T");
   }
 });
 
 rl.on("close", () => {
-  process.stdout.write(out.join("\n") + "\n");
+  // Nothing to flush: every result was written as it was produced.
 });

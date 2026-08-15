@@ -306,6 +306,76 @@ object FuzzMain {
 
     // ---------------------------------------------------------------------- main
 
+    /** Seconds of no oracle output before assuming V8 is stuck on a pattern. */
+    private const val STALL_SECONDS = 120
+
+    /**
+     * Whether this engine can finish the case inside its step budget.
+     *
+     * A syntax error counts as finishing: the verdict is cheap and still needs
+     * comparing.
+     */
+    private fun finishesWithinBudget(c: Case): Boolean =
+        try {
+            val re = RegExp.compile(c.pattern, c.flags)
+            when (c.op) {
+                'x' -> re.exec(c.input)
+                'a' -> re.findAll(c.input)
+                'r' -> re.replace(c.input, c.extra)
+                else -> re.split(c.input, c.extra.toIntOrNull() ?: -1)
+            }
+            true
+        } catch (_: RegExpSyntaxError) {
+            true
+        } catch (_: RegExpStepLimitError) {
+            false
+        }
+
+    /**
+     * Kills the oracle if it stops producing output, naming the case it stopped
+     * on.
+     *
+     * Screening should prevent this, but the two engines optimise differently,
+     * so a pattern that is cheap here can still be catastrophic for V8. Without
+     * this the run simply hangs, which is what it did in CI.
+     */
+    private fun startWatchdog(
+        process: Process,
+        cases: List<Case>,
+        progress: java.util.concurrent.atomic.AtomicInteger,
+    ): Thread {
+        val t = Thread {
+            var last = -1
+            var stalled = 0
+            try {
+                while (process.isAlive) {
+                    Thread.sleep(5_000)
+                    val now = progress.get()
+                    if (now != last) {
+                        last = now
+                        stalled = 0
+                        continue
+                    }
+                    stalled += 5
+                    if (stalled >= STALL_SECONDS) {
+                        System.err.println(
+                            "\noracle produced no output for ${STALL_SECONDS}s after $now results.\n" +
+                                "It is stuck on:\n    ${cases.getOrNull(now)}\n" +
+                                "V8 has no step limit, so a catastrophic pattern runs until killed.",
+                        )
+                        process.destroyForcibly()
+                        return@Thread
+                    }
+                }
+            } catch (_: InterruptedException) {
+                // Normal completion.
+            }
+        }
+        t.isDaemon = true
+        t.start()
+        return t
+    }
+
     @JvmStatic
     fun main(args: Array<String>) {
         val count = args.getOrNull(0)?.toIntOrNull() ?: 20_000
@@ -315,13 +385,28 @@ object FuzzMain {
         require(File(oracleScript).isFile) { "oracle script not found: $oracleScript" }
 
         val rnd = Random(seed)
-        val cases = (0 until count).map { genCase(rnd) }
+        val generated = (0 until count).map { genCase(rnd) }
 
         println("fuzzing $count cases (seed=$seed) against node ...")
 
+        // Screen first. A case this engine cannot finish inside its step budget
+        // is skipped by the comparison anyway — but node has no such budget, so
+        // asking it about one makes V8 spin until something kills it. Screening
+        // costs no coverage and keeps the oracle responsive.
+        val cases = ArrayList<Case>(generated.size)
+        var screenedOut = 0
+        for (c in generated) {
+            if (finishesWithinBudget(c)) cases.add(c) else screenedOut++
+        }
+
         val process = ProcessBuilder("node", oracleScript)
-            .redirectErrorStream(false)
+            // Inherit stderr: nothing drains a piped stderr, so a single
+            // diagnostic line from the oracle would fill the pipe and block it.
+            .redirectError(ProcessBuilder.Redirect.INHERIT)
             .start()
+
+        // Without this a killed run leaves node spinning at 100% indefinitely.
+        Runtime.getRuntime().addShutdownHook(Thread { process.destroyForcibly() })
 
         // Feed the oracle on a separate thread so a full pipe cannot deadlock us.
         val writer = Thread {
@@ -340,15 +425,30 @@ object FuzzMain {
         }
         writer.start()
 
-        val results = ArrayList<String>(count)
+        val results = ArrayList<String>(cases.size)
+        val progress = java.util.concurrent.atomic.AtomicInteger()
+        val watchdog = startWatchdog(process, cases, progress)
+
         process.inputStream.bufferedReader().use { r: BufferedReader ->
-            r.forEachLine { if (it.isNotEmpty()) results.add(it) }
+            r.forEachLine {
+                if (it.isNotEmpty()) {
+                    results.add(it)
+                    progress.incrementAndGet()
+                }
+            }
         }
+        watchdog.interrupt()
         writer.join()
         process.waitFor()
 
         check(results.size == cases.size) {
-            "oracle returned ${results.size} results for ${cases.size} cases"
+            "oracle returned ${results.size} results for ${cases.size} cases" +
+                if (results.size < cases.size) {
+                    " — it was killed early; the case after the last result is\n    " +
+                        "${cases.getOrNull(results.size)}"
+                } else {
+                    ""
+                }
         }
 
         val failures = ArrayList<String>()
@@ -383,6 +483,7 @@ object FuzzMain {
             if (skippedSurrogate > 0) add("$skippedSurrogate skipped: V8 surrogate defect")
             if (skippedQuotedString > 0) add("$skippedQuotedString skipped: V8 \\q{} folding defect")
             if (skippedModifier > 0) add("$skippedModifier skipped: V8 modifier scoping defect")
+            if (screenedOut > 0) add("$screenedOut screened out: exceed this engine's step budget")
             if (stepLimited > 0) add("$stepLimited step-limited")
         }
         val note = if (notes.isEmpty()) "" else notes.joinToString(", ", prefix = " (", postfix = ")")
