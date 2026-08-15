@@ -313,6 +313,32 @@ class ParserTest {
         rejects("(a)[\\1]", "u")
     }
 
+    /**
+     * `\0` inside a class is the NUL escape in every mode.
+     *
+     * Found by the fuzzer against node: the Unicode-mode class path rejected all
+     * digit escapes outright, but `CharacterEscape :: 0 [lookahead not
+     * DecimalDigit]` keeps `\0` valid. Only a digit *following* it makes it a
+     * decimal escape, which a class may not contain.
+     */
+    @Test
+    fun nulEscapeIsValidInsideAClass() {
+        val nul = 0.toChar().toString()
+        for (f in listOf("", "u", "v")) {
+            assertEquals(nul, RegExp.compile("[\\0]", f).exec(nul)?.value, "/[\\0]/$f")
+            assertEquals(nul, RegExp.compile("[+\\0d]", f).exec(nul)?.value, "/[+\\0d]/$f")
+        }
+        // A digit after it makes it a decimal escape, which Unicode mode rejects
+        // and Annex B re-reads as a legacy octal escape.
+        for (f in listOf("u", "v")) {
+            rejects("[\\01]", f)
+            rejects("[\\1]", f)
+            rejects("[\\9]", f)
+        }
+        accepts("[\\01]")
+        accepts("[\\1]")
+    }
+
     @Test
     fun backspaceInClass() {
         val cc = parse("[\\b]").body as CharClass

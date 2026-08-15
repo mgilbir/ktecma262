@@ -904,7 +904,15 @@ internal class Parser(
             // Inside a class there are no backreferences: `\1` is a legacy octal
             // escape under Annex B, and an error under Unicode mode.
             in '0'..'9' -> {
-                if (!annexB) fail("invalid decimal escape", backslash)
+                if (!annexB) {
+                    // `\0` is still the NUL escape, as long as no digit follows
+                    // it; every other digit escape is invalid here.
+                    if (c == '0' && peekAt(1)?.isAsciiDigit() != true) {
+                        advance()
+                        return listOf(ClassLiteral(0))
+                    }
+                    fail("invalid decimal escape", backslash)
+                }
                 when (val node = legacyOctalSequence()) {
                     is Literal -> listOf(ClassLiteral(node.codePoint))
                     is Sequence -> node.elements.map { ClassLiteral((it as Literal).codePoint) }
@@ -1025,6 +1033,17 @@ internal class Parser(
             }
             'q' -> parseStringDisjunction(backslash)
             'b' -> { advance(); ClassSetLiteral(0x08) } // backspace, as in `u` mode
+
+            // `\0` is the NUL escape when no digit follows; any other digit
+            // escape is invalid, since a class holds no backreferences.
+            in '0'..'9' -> {
+                if (c == '0' && peekAt(1)?.isAsciiDigit() != true) {
+                    advance()
+                    ClassSetLiteral(0)
+                } else {
+                    fail("invalid decimal escape", backslash)
+                }
+            }
             else -> {
                 if (isClassSetReservedPunctuator(c)) {
                     advance()
