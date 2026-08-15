@@ -64,6 +64,15 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: ./gradlew verifyPublishedVariants
 
+      - name: Build and check the Central bundle
+        # Assembles the real upload bundle with all seven publications and
+        # checks it, without uploading anything. The publish path used to run
+        # for the first time during a release, which is how 0.1.3 shipped with
+        # three modules missing. Unsigned here — no key is available to CI, so
+        # the signature check is skipped and the release job still covers it.
+        if: matrix.os == 'macos-latest'
+        run: ./gradlew centralBundle verifyCentralBundle
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
