@@ -21,7 +21,7 @@ code and need identical results.
 
 ```kotlin
 dependencies {
-    implementation("io.github.mgilbir:ktecma262:0.1.3")
+    implementation("io.github.mgilbir:ktecma262:0.1.4")
 }
 ```
 
@@ -367,13 +367,12 @@ tag is the point of no return, not a later button.
 ```bash
 # 1. bump `version` in build.gradle.kts, commit
 # 2. tag and push
-git tag -a v0.1.3 -m "ktecma262 0.1.3"
-git push origin v0.1.3
+git tag -a v0.1.4 -m "ktecma262 0.1.4"
+git push origin v0.1.4
 ```
 
 Publication is skipped — with a notice, not a failure — unless these repository
-secrets are present. The same names work as environment variables for a local
-`./gradlew publishAllPublicationsToCentralRepository`:
+secrets are present. The same names work as environment variables locally:
 
 | Secret | What it is |
 | --- | --- |
@@ -386,17 +385,35 @@ It also needs the `io.github.mgilbir` namespace verified in the Central portal.
 Credentials are only ever read from the environment — never from a file in the
 repository, and never written to one.
 
-Uploading is not the last step. The build deploys through the OSSRH Staging API
-bridge, which leaves the artifacts in *its own* staging repository — they never
-reach the Central portal until something pushes them across:
+### How publishing works, and why it works that way
 
-```
-POST /manual/upload/defaultRepository/{namespace}?publishing_type=automatic
+The build stages every publication into one directory, zips it, and uploads
+that single bundle to the Central Portal:
+
+```bash
+./gradlew centralBundle verifyCentralBundle
+# -> build/distributions/ktecma262-<version>-bundle.zip
 ```
 
-The workflow makes that call after publishing. Skipping it is why 0.1.2
-uploaded successfully while the deployments list stayed empty. Watch progress
-at [central.sonatype.com](https://central.sonatype.com/publishing/deployments).
+It does **not** upload each publication separately for the server to assemble.
+That is what broke 0.1.3: all seven publications uploaded without error into a
+single OSSRH staging repository, and the deployment the Portal assembled from
+it contained four. `ktecma262-js`, `ktecma262-iosarm64` and
+`ktecma262-iossimulatorarm64` were simply absent, nothing failed, and by the
+time it was visible the release was already publishing. A version on Central
+cannot be replaced.
+
+Two checks guard it now, and both have been shown to fail when they should:
+
+- `verifyCentralBundle` fails if a publication is missing from the bundle, or
+  missing its POM, module metadata or signature — before anything is uploaded.
+- `.github/scripts/check-deployment.py` compares the modules bundled against
+  the components the Portal reports for the deployment, and fails if any are
+  missing. Against 0.1.3's real deployment it names all three.
+
+Deployments are uploaded as `USER_MANAGED`, so the Portal validates and then
+waits: releasing to Central is irreversible, so it stays a decision rather than
+a side effect of pushing a tag.
 
 To check the artifacts without publishing anything:
 

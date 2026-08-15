@@ -116,68 +116,53 @@ jobs:
             echo "::notice::skipping publish. See the Releasing section of README.md."
             exit 0
           fi
-          if ! ./gradlew publishAllPublicationsToCentralRepository --no-configuration-cache; then
-            echo "::error::Upload to Maven Central failed."
-            echo ""
-            echo "A 401 means the credentials were rejected. Two usual causes:"
-            echo "  1. CENTRAL_TOKEN_USERNAME holds the Sonatype account name"
-            echo "     rather than the generated token username. Both halves of"
-            echo "     the pair from https://central.sonatype.com/account are"
-            echo "     random strings; the username is not your login."
-            echo "  2. The token was pasted with surrounding whitespace. The"
-            echo "     build trims it, but regenerating the pair is reliable."
-            echo ""
-            echo "A 403 instead means the io.github.mgilbir namespace is not"
-            echo "verified for this account."
-            exit 1
-          fi
-
-      - name: Push the staging repository to the Portal
-        # Deploying through the OSSRH Staging API only puts the artifacts in
-        # *its* staging repository. They do not appear in the Central portal
-        # until this call pushes them across, which is why the 0.1.2 upload
-        # succeeded while the deployments list stayed empty.
-        env:
-          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
-          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CENTRAL_TOKEN_USERNAME:-}" ]; then
-            echo "::notice::No credentials configured; nothing to promote."
-            exit 0
-          fi
-
-          api=https://ossrh-staging-api.central.sonatype.com
-          namespace=io.github.mgilbir
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
 
-          # Bearer credential is base64("user:pass"). It is masked immediately and
-          # handed to curl on stdin, so it never appears in a process argument.
+          # One bundle containing every publication, checked before it leaves
+          # the runner. 0.1.3 uploaded each publication separately and the
+          # server assembled four modules out of seven.
+          ./gradlew centralBundle verifyCentralBundle --no-configuration-cache
+          bundle="build/distributions/ktecma262-$version-bundle.zip"
+          expected=$(ls build/central-bundle/io/github/mgilbir)
+          echo "Modules in the bundle:"
+          echo "$expected" | sed 's/^/  /'
+
+          # Bearer credential is base64("user:pass"). Masked immediately and
+          # passed to curl on stdin, so it never appears in a process argument.
           auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 | tr -d '\n')
           echo "::add-mask::$auth"
           hdr() { printf 'header = "Authorization: Bearer %s"\n' "$auth"; }
 
-          echo "Staging repositories for this account:"
-          hdr | curl -sS -K - "$api/manual/search/repositories" | head -c 2000
-          echo
+          # publishingType=USER_MANAGED: the Portal validates the deployment and
+          # waits. Releasing to Central is irreversible, so it stays a decision.
+          id=$(hdr | curl -sS -K - --fail-with-body -X POST \
+            --form "bundle=@$bundle" \
+            "https://central.sonatype.com/api/v1/publisher/upload?name=ktecma262%20$version&publishingType=USER_MANAGED")
+          echo "Deployment $id"
 
-          # publishing_type=automatic: the Portal validates the deployment and
-          # releases it without a manual step. `user_managed` would instead
-          # leave it waiting for someone to press Publish.
-          code=$(hdr | curl -sS -K - -o promote.json -w '%{http_code}' -X POST \
-            "$api/manual/upload/defaultRepository/$namespace?publishing_type=automatic&deployment_name=ktecma262%20$version")
-          echo "HTTP $code"
-          cat promote.json 2>/dev/null || true
-          rm -f promote.json
-          echo
-          if [ "$code" != "200" ]; then
-            echo "::error::Promoting the staging repository failed with HTTP $code."
-            echo "A 400 usually means there was no open staging repository to push."
-            exit 1
-          fi
-          echo "Pushed to the Portal for automatic release."
-          echo "Publishing to Maven Central is irreversible; a version cannot be"
-          echo "replaced once it lands. Progress: https://central.sonatype.com/publishing/deployments"
+          # Wait for validation, then check the Portal registered every module.
+          # This is what was missing: the upload succeeding says nothing about
+          # what the deployment ended up containing.
+          for _ in $(seq 1 60); do
+            hdr | curl -sS -K - -X POST \
+              "https://central.sonatype.com/api/v1/publisher/status?id=$id" > status.json
+            state=$(python3 -c "import json;print(json.load(open('status.json'))['deploymentState'])")
+            echo "  state: $state"
+            case "$state" in
+              VALIDATED|PUBLISHING|PUBLISHED) break ;;
+              FAILED)
+                echo "::error::Deployment $id failed validation."
+                cat status.json
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+
+          .github/scripts/check-deployment.py status.json build/central-bundle/io/github/mgilbir
+          rm -f status.json
+
+          echo "Release it at https://central.sonatype.com/publishing/deployments"
 
       - name: Collect artifacts
         run: |

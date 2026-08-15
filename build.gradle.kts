@@ -7,7 +7,10 @@ plugins {
 }
 
 group = "io.github.mgilbir"
-version = "0.1.3"
+version = "0.1.4"
+
+/** Build-relative directory the Central Portal bundle is staged in. */
+val CENTRAL_BUNDLE_DIR = "central-bundle"
 
 repositories {
     mavenCentral()
@@ -113,22 +116,22 @@ publishing {
     }
 
     repositories {
+        // A local directory, not a remote server.
+        //
+        // Uploading each publication separately to the OSSRH Staging API means
+        // the server assembles the deployment from whatever it believes landed
+        // in a staging repository. For 0.1.3 it assembled four modules out of
+        // seven — the js and both iOS publications uploaded successfully, were
+        // never reported as failures, and simply did not appear in the
+        // deployment. There is no way to see that from the upload side.
+        //
+        // So publish into a tree here instead, zip it, and hand the Portal one
+        // bundle containing exactly what this build produced. Nothing is
+        // assembled remotely, and `verifyCentralBundle` can check the contents
+        // before anything is uploaded.
         maven {
-            name = "central"
-            // Overridable so the same build can target a staging repository.
-            url = uri(
-                providers.gradleProperty("centralRepositoryUrl").orNull
-                    ?: "https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/",
-            )
-            credentials {
-                // Read from the environment only — never stored in the repository.
-                // Names match the GitHub repository secrets exactly, so there is
-                // one set of names to keep straight rather than two.
-                // Trimmed: a token pasted into a secret often carries a trailing
-                // newline, which the server rejects as a bad credential.
-                username = providers.environmentVariable("CENTRAL_TOKEN_USERNAME").orNull?.trim()
-                password = providers.environmentVariable("CENTRAL_TOKEN_PASSWORD").orNull?.trim()
-            }
+            name = "centralBundle"
+            url = layout.buildDirectory.dir(CENTRAL_BUNDLE_DIR).get().asFile.toURI()
         }
     }
 }
@@ -150,6 +153,101 @@ signing {
 // javadoc jar to exist first.
 tasks.withType<AbstractPublishToMaven>().configureEach {
     dependsOn(tasks.withType<Sign>())
+}
+
+// ------------------------------------------------- Central Portal bundle
+
+// The staging directory accumulates, so a previous version's files would ride
+// along in the next bundle. Clear it before anything publishes into it.
+val cleanCentralBundle by tasks.registering(Delete::class) {
+    delete(layout.buildDirectory.dir(CENTRAL_BUNDLE_DIR))
+}
+
+tasks.withType<PublishToMavenRepository>().configureEach {
+    if (name.endsWith("ToCentralBundleRepository")) dependsOn(cleanCentralBundle)
+}
+
+/**
+ * The single zip uploaded to the Central Portal.
+ *
+ * The Portal takes one bundle per deployment, laid out exactly like a Maven
+ * repository, so what is uploaded is what is published — there is no
+ * server-side assembly step that can quietly leave a module out.
+ */
+val centralBundle by tasks.registering(Zip::class) {
+    group = "publishing"
+    description = "Build the Maven Central Portal upload bundle"
+    dependsOn("publishAllPublicationsToCentralBundleRepository")
+    from(layout.buildDirectory.dir(CENTRAL_BUNDLE_DIR))
+    archiveFileName.set("ktecma262-$version-bundle.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+}
+
+// Every artifactId this build publishes, captured once Kotlin has created the
+// publications.
+val publishedArtifactIds: SetProperty<String> = objects.setProperty(String::class.java)
+afterEvaluate {
+    publishedArtifactIds.set(
+        publishing.publications.withType<MavenPublication>().map { it.artifactId }.toSortedSet(),
+    )
+}
+
+/**
+ * Checks the bundle before it is uploaded.
+ *
+ * This is the check that 0.1.3 needed and did not have: every publication must
+ * be present in the tree, each with a POM, Gradle module metadata and — when
+ * signing is on — a detached signature for each. A module missing here is a
+ * module that would be missing on Central, except that here it costs a failed
+ * build rather than an immutable release.
+ */
+val verifyCentralBundle by tasks.registering {
+    group = "verification"
+    description = "Check the Central bundle contains every publication"
+    dependsOn(centralBundle)
+
+    val bundleDir = layout.buildDirectory.dir(CENTRAL_BUNDLE_DIR)
+    val expected = publishedArtifactIds
+    val signed = providers.environmentVariable("MAVEN_GPG_PRIVATE_KEY").map { it.isNotBlank() }.orElse(false)
+    // project.group, not `group` — inside a task block that is the task's own
+    // group, which is how this check first "failed" looking under verification/.
+    val groupPath = project.group.toString().replace('.', '/')
+    val ver = project.version.toString()
+
+    doLast {
+        val root = bundleDir.get().asFile
+        check(root.isDirectory) { "no bundle staged at $root" }
+
+        val artifactIds = expected.get()
+        check(artifactIds.isNotEmpty()) { "no publications — the check would pass vacuously" }
+
+        val problems = mutableListOf<String>()
+        for (id in artifactIds) {
+            val dir = root.resolve("$groupPath/$id/$ver")
+            if (!dir.isDirectory) {
+                problems += "$id: no directory $groupPath/$id/$ver"
+                continue
+            }
+            val names = dir.listFiles().orEmpty().map { it.name }
+            fun requireFile(suffix: String) {
+                if (names.none { it.endsWith(suffix) }) problems += "$id: no *$suffix"
+            }
+            requireFile(".pom")
+            requireFile(".module")
+            if (signed.get()) {
+                requireFile(".pom.asc")
+                requireFile(".module.asc")
+            }
+        }
+        check(problems.isEmpty()) {
+            "the Central bundle is incomplete:\n" + problems.joinToString("\n") { "  $it" } +
+                "\n\nPublications: ${artifactIds.joinToString(", ")}"
+        }
+        logger.lifecycle(
+            "verified the Central bundle contains all ${artifactIds.size} publications" +
+                if (signed.get()) " with signatures" else " (unsigned — no signing key configured)",
+        )
+    }
 }
 
 // Publication names, captured once Kotlin has created them. Kotlin creates a

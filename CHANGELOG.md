@@ -1,6 +1,39 @@
 # Changelog
 
+## 0.1.4
+
+Republishes 0.1.3 complete. The library is unchanged; 0.1.3 reached Maven
+Central with four of its seven modules.
+
+### Fixed (publishing)
+
+- Publishing no longer uploads each publication separately to the OSSRH
+  Staging API for the server to assemble into a deployment. That assembly is
+  what failed: all seven publications uploaded without error, into a single
+  staging repository, and the deployment the Portal built from it contained
+  four. Nothing on the upload side reported a problem.
+
+  The build now stages every publication into one directory, zips it, and
+  uploads that single bundle to the Central Portal API. What is uploaded is
+  what is published, with no server-side assembly step in between.
+
+- `./gradlew verifyCentralBundle` checks the bundle before it is uploaded:
+  every publication present, each with a POM, Gradle module metadata and a
+  detached signature.
+
+- After uploading, the release workflow compares the modules it bundled
+  against the components the Portal reports for the deployment, and fails if
+  any are missing. Run against 0.1.3's actual deployment, this reports
+  exactly `ktecma262-iosarm64, ktecma262-iossimulatorarm64, ktecma262-js`.
+
 ## 0.1.3
+
+**Broken on Maven Central: only `ktecma262`, `ktecma262-jvm`,
+`ktecma262-linuxx64` and `ktecma262-macosarm64` were published.** The root
+module still declares variants for JS and both iOS targets, so resolving it
+for those platforms fails outright. The cause was in publishing, not in the
+build — the artifacts below were all produced and uploaded correctly. Use
+0.1.4.
 
 Adds native targets and fixes a parser bug found by the nightly fuzzer.
 
