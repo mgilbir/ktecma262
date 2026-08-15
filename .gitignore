@@ -1,0 +1,8 @@
+.gradle/
+build/
+kotlin-js-store/
+*.log
+
+# Local tool caches
+.kotlin/
+node_modules/
