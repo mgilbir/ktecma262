@@ -88,6 +88,48 @@ jobs:
             exit 1
           fi
 
+      - name: Push the staging repository to the Portal
+        # Deploying through the OSSRH Staging API only puts the artifacts in
+        # *its* staging repository. They do not appear in the Central portal
+        # until this call pushes them across, which is why the 0.1.2 upload
+        # succeeded while the deployments list stayed empty.
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CENTRAL_TOKEN_USERNAME:-}" ]; then
+            echo "::notice::No credentials configured; nothing to promote."
+            exit 0
+          fi
+
+          api=https://ossrh-staging-api.central.sonatype.com
+          namespace=io.github.mgilbir
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)
+
+          # Bearer credential is base64("user:pass"). It is masked immediately and
+          # handed to curl on stdin, so it never appears in a process argument.
+          auth=$(printf '%s:%s' "$CENTRAL_TOKEN_USERNAME" "$CENTRAL_TOKEN_PASSWORD" | base64 -w0)
+          echo "::add-mask::$auth"
+          hdr() { printf 'header = "Authorization: Bearer %s"\n' "$auth"; }
+
+          echo "Staging repositories for this account:"
+          hdr | curl -sS -K - "$api/manual/search/repositories" | head -c 2000
+          echo
+
+          code=$(hdr | curl -sS -K - -o /tmp/promote.json -w '%{http_code}' -X POST \
+            "$api/manual/upload/defaultRepository/$namespace?publishing_type=user_managed&deployment_name=ktecma262%20$version")
+          echo "HTTP $code"
+          cat /tmp/promote.json 2>/dev/null || true
+          echo
+          if [ "$code" != "200" ]; then
+            echo "::error::Promoting the staging repository failed with HTTP $code."
+            echo "A 400 usually means there was no open staging repository to push."
+            exit 1
+          fi
+          echo "Pushed to the Portal as a user-managed deployment."
+          echo "Release it at https://central.sonatype.com/publishing/deployments"
+
       - name: Collect artifacts
         run: |
           mkdir -p artifacts
