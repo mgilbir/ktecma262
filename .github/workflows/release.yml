@@ -61,13 +61,13 @@ jobs:
 
       - name: Publish to Maven Central
         env:
-          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
           set -euo pipefail
-          if [ -z "${MAVEN_CENTRAL_USERNAME:-}" ] || [ -z "${SIGNING_KEY:-}" ]; then
+          if [ -z "${CENTRAL_TOKEN_USERNAME:-}" ] || [ -z "${MAVEN_GPG_PRIVATE_KEY:-}" ]; then
             echo "::notice::Maven Central credentials or signing key not configured;"
             echo "::notice::skipping publish. See the Releasing section of README.md."
             exit 0

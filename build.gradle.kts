@@ -109,8 +109,10 @@ publishing {
             )
             credentials {
                 // Read from the environment only — never stored in the repository.
-                username = providers.environmentVariable("MAVEN_CENTRAL_USERNAME").orNull
-                password = providers.environmentVariable("MAVEN_CENTRAL_PASSWORD").orNull
+                // Names match the GitHub repository secrets exactly, so there is
+                // one set of names to keep straight rather than two.
+                username = providers.environmentVariable("CENTRAL_TOKEN_USERNAME").orNull
+                password = providers.environmentVariable("CENTRAL_TOKEN_PASSWORD").orNull
             }
         }
     }
@@ -118,9 +120,11 @@ publishing {
 
 signing {
     // Signing is required to publish to Maven Central and irrelevant locally, so
-    // it switches itself on only when a key is supplied.
-    val signingKey = providers.environmentVariable("SIGNING_KEY").orNull
-    val signingPassword = providers.environmentVariable("SIGNING_PASSWORD").orNull
+    // it switches itself on only when a key is supplied. The key is an
+    // ASCII-armoured private key read straight from the environment; it is never
+    // written to disk or into a Gradle property.
+    val signingKey = providers.environmentVariable("MAVEN_GPG_PRIVATE_KEY").orNull
+    val signingPassword = providers.environmentVariable("MAVEN_GPG_PASSPHRASE").orNull
     if (!signingKey.isNullOrBlank()) {
         useInMemoryPgpKeys(signingKey, signingPassword)
         sign(publishing.publications)

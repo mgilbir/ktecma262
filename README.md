@@ -342,19 +342,25 @@ git tag -a v0.1.0 -m "ktecma262 0.1.0"
 git push origin v0.1.0
 ```
 
-Publication to Maven Central is skipped — with a notice, not a failure — until
-these repository secrets exist:
+Publication is skipped — with a notice, not a failure — unless these repository
+secrets are present. The same names work as environment variables for a local
+`./gradlew publishAllPublicationsToCentralRepository`:
 
 | Secret | What it is |
 | --- | --- |
-| `MAVEN_CENTRAL_USERNAME` | Sonatype Central token username |
-| `MAVEN_CENTRAL_PASSWORD` | Sonatype Central token password |
-| `SIGNING_KEY` | ASCII-armoured GPG private key |
-| `SIGNING_PASSWORD` | Passphrase for that key |
+| `CENTRAL_TOKEN_USERNAME` | Token username from central.sonatype.com/usertoken |
+| `CENTRAL_TOKEN_PASSWORD` | Token password |
+| `MAVEN_GPG_PRIVATE_KEY` | ASCII-armoured GPG private key |
+| `MAVEN_GPG_PASSPHRASE` | Passphrase for that key |
 
 It also needs the `io.github.mgilbir` namespace verified in the Central portal.
-Nothing else in the build reads credentials, and they are only ever taken from
-the environment — never from a file in the repository.
+Credentials are only ever read from the environment — never from a file in the
+repository, and never written to one.
+
+Uploading is not the last step: the build deploys through the OSSRH Staging API
+bridge, so the result lands as a *deployment* in the Central portal. Unless
+automatic publishing is enabled for the namespace, release it from
+[central.sonatype.com](https://central.sonatype.com/publishing/deployments).
 
 To check the artifacts without publishing anything:
 
