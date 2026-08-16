@@ -19,6 +19,7 @@ FILES=(
   PropList.txt
   DerivedCoreProperties.txt
   DerivedNormalizationProps.txt
+  NormalizationTest.txt
   CaseFolding.txt
   PropertyAliases.txt
   PropertyValueAliases.txt
