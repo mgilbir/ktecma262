@@ -109,9 +109,12 @@ Kotlin target reproduces:
 - `String.encodeUriComponent()`, `String.encodeUri()`
 - `String.decodeUriComponent()`, `String.decodeUri()`
 
-**Text** — Unicode normalisation, which common Kotlin has no equivalent for:
+**Text** — Unicode normalisation and the string and number semantics Kotlin
+gets differently:
 
 - `String.normalize(NormalizationForm.NFC | NFD | NFKC | NFKD)`
+- `String.ecmaTrim()`, `ecmaTrimStart()`, `ecmaTrimEnd()`
+- `EcmaMath.round/trunc/sign/clz32/imul/fround`
 
 ## API
 
@@ -305,6 +308,34 @@ Against `java.lang.Double.toString` (`./gradlew bench`):
 The JDK is not producing the same string — it lays the digits out differently
 and is not shortest for the smallest subnormals — so that is a scale reference,
 not an equivalence.
+
+## Where Kotlin disagrees with JavaScript
+
+Two of these produce wrong answers rather than errors, on every target:
+
+```kotlin
+"x\uFEFF".trim()          // "x\uFEFF" - Kotlin keeps the byte order mark
+"x\uFEFF".ecmaTrim()      // "x"
+
+kotlin.math.round(0.5)    // 0.0 - ties to even
+EcmaMath.round(0.5)       // 1.0 - ties toward positive infinity
+kotlin.math.round(2.5)    // 2.0
+EcmaMath.round(2.5)       // 3.0
+```
+
+The trim difference is five characters, measured rather than assumed: Kotlin
+strips U+001C to U+001F, which JavaScript keeps, and keeps U+FEFF, which
+JavaScript strips. U+00A0 is stripped by both. Which characters count is
+verified over the whole BMP.
+
+`EcmaMath` covers only the `Math` functions ECMA-262 specifies exactly —
+`round`, `trunc`, `sign`, `clz32`, `imul`, `fround`. The rest of `Math` is
+implementation-approximated, so there would be nothing to be correct against.
+
+`round` is not `floor(x + 0.5)`: for `0.49999999999999994` that formula answers
+1 where the answer is 0, because the addition rounds up. `fround` is not
+`toFloat().toDouble()` either — on Kotlin/JS a `Float` is a JavaScript number,
+so that returns the input unchanged, silently and only there.
 
 ## Normalisation
 

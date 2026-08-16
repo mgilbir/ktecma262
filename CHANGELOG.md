@@ -4,6 +4,32 @@
 
 ### Added
 
+- `String.ecmaTrim()`, `ecmaTrimStart()`, `ecmaTrimEnd()` and `EcmaMath` in
+  `io.github.mgilbir.ecma262.text` and `.number`. These are the places Kotlin
+  disagrees with JavaScript by returning a different answer rather than an
+  error, on every target including Kotlin/JS.
+
+  Trimming differs on five characters, measured rather than assumed: Kotlin
+  strips U+001C to U+001F where JavaScript keeps them, and keeps U+FEFF where
+  JavaScript strips it. U+00A0 is stripped by both, contrary to a first guess.
+  Which characters count is verified over the whole BMP.
+
+  `EcmaMath` covers only the exactly specified functions — `round`, `trunc`,
+  `sign`, `clz32`, `imul`, `fround` — since the rest of `Math` is
+  implementation-approximated and there is nothing to be correct against.
+  `kotlin.math.round` rounds ties to even; JavaScript rounds them toward
+  positive infinity.
+
+  Two implementations that look obvious are wrong: `floor(x + 0.5)` answers 1
+  for `0.49999999999999994`, and `toFloat().toDouble()` is a no-op on
+  Kotlin/JS, where a `Float` is a JavaScript number. The second was caught by
+  the JS target failing while JVM and native passed.
+
+  The whitespace predicate is shared with the number parser, so the two cannot
+  drift apart. Five planted bugs are caught.
+
+
+
 - `String.normalize()` in `io.github.mgilbir.ecma262.text` — ECMA-262 22.1.3.15,
   which defers to UAX #15, in all four forms. `java.text.Normalizer` is JVM-only
   and Kotlin/Native has nothing, so multiplatform code comparing user-entered

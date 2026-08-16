@@ -1,5 +1,7 @@
 package io.github.mgilbir.ecma262.number
 
+import io.github.mgilbir.ecma262.text.isEcmaWhiteSpace
+
 /**
  * `StringToNumber` — ECMA-262 7.1.4.1.1, the conversion `Number("…")` performs.
  *
@@ -34,8 +36,8 @@ package io.github.mgilbir.ecma262.number
 public fun String.toEcmaDouble(): Double {
     var start = 0
     var end = length
-    while (start < end && isStrWhiteSpace(this[start])) start++
-    while (end > start && isStrWhiteSpace(this[end - 1])) end--
+    while (start < end && isEcmaWhiteSpace(this[start])) start++
+    while (end > start && isEcmaWhiteSpace(this[end - 1])) end--
 
     // StringNumericLiteral ::: StrWhiteSpace_opt — an empty literal is +0.
     if (start == end) return 0.0
@@ -63,21 +65,6 @@ public fun String.toEcmaDouble(): Double {
     }
 
     return parseDecimal(this, i, end, negative)
-}
-
-/**
- * `WhiteSpace` and `LineTerminator` from the lexical grammar.
- *
- * Written as escapes rather than literal characters: several of these are
- * invisible, and one of them (U+FEFF) is a byte-order mark that tooling likes
- * to eat. All are in the BMP, so a `Char` comparison is enough.
- */
-private fun isStrWhiteSpace(c: Char): Boolean = when (c) {
-    '\u0009', '\u000B', '\u000C', '\u0020', '\u00A0', '\uFEFF' -> true // WhiteSpace
-    '\u000A', '\u000D', '\u2028', '\u2029' -> true // LineTerminator
-    '\u1680', '\u202F', '\u205F', '\u3000' -> true // remaining Space_Separator
-    in '\u2000'..'\u200A' -> true
-    else -> false
 }
 
 private fun matchesAt(s: String, from: Int, end: Int, word: String): Boolean {
