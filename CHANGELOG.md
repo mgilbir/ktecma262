@@ -56,6 +56,26 @@
 - Formatting and parsing are now checked as inverses against each other, so the
   round-trip property no longer leans on the host's decimal parser.
 
+- Grisu3 as the fast path for `Double.toEcmaString()`, with the exact method
+  kept as the fallback. It works in 64-bit arithmetic against a generated table
+  of cached powers of ten, tracks the rounding error it accumulates, and
+  declines when that error could change the answer — measured at 0.51% of
+  random doubles and 0% of subnormals and simple decimals.
+
+  Correctness does not depend on it being right about which values are hard,
+  only on it refusing to answer when unsure. `Grisu3AgreesWithExactTest`
+  compares the two implementations directly, and asserts the fallback is still
+  reached so it cannot rot into dead code. Three planted bugs — never
+  declining, truncating instead of rounding in the 128-bit multiply, and
+  dropping the closer-lower-boundary rule at powers of two — are each caught by
+  both that test and the node differential.
+
+  The cached powers are generated with `BigInt` and checked to within half a
+  unit in the last place during generation, rather than transcribed.
+
+  Against `java.lang.Double.toString`: 63.5x slower becomes 3.5x for values at
+  the extremes of the exponent range, and 6.8x becomes 2.0x for everyday ones.
+
 - A differential fixture for numbers, checked against node over 231,948 values:
   a deterministic sweep of the bit space, every subnormal up to 20,000, every
   power of two, and short decimals. Walked from an index on both sides, so the

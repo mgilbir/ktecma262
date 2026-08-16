@@ -209,14 +209,40 @@ They do not cover everything. Ties satisfy both properties either way, so
 — rounding ties down instead of to even costs 48 values in 231,948, and neither
 property notices.
 
-### Current implementation
+### How the digits are produced
 
-The exact rational method of Steele & White, as presented by Burger & Dybvig:
-big integers, no lookup tables, every step checkable by reading it. Correctness
-first — it is **63x** slower than `java.lang.Double.toString` for values at the
-extremes of the exponent range and **6.8x** slower for everyday ones
-(`./gradlew bench`). A table-driven method (Ryu, Schubfach) would close that,
-and the property tests above are what make swapping it in safe.
+Two implementations, and the fast one is only allowed to answer when it can
+prove it should:
+
+- **Grisu3** does the work in 64-bit arithmetic against a table of cached
+  powers of ten. It tracks the rounding error it accumulates and **declines**
+  whenever that error could change the answer — about one value in two hundred.
+- **The exact rational method** of Steele & White, in Burger & Dybvig's form,
+  answers the rest. Big integers, no tables, every step checkable by reading it.
+
+Correctness therefore does not depend on Grisu3 being right about which values
+are hard, only on it refusing to answer when unsure. A bug that makes it
+doubtful costs speed; a bug that makes it confidently wrong is caught by
+`Grisu3AgreesWithExactTest`, which compares the two implementations directly
+over subnormals, powers of two, simple decimals and 50,000 random doubles. That
+test also asserts the fallback is still *reached*, so it cannot rot into dead
+code.
+
+The cached powers are generated, not transcribed — `tools/numbers/gen-pow10.mjs`
+computes each entry exactly with `BigInt` and verifies it lands within half a
+unit in the last place. A single wrong digit in a table like that produces
+answers that are wrong for only a handful of inputs.
+
+Against `java.lang.Double.toString` (`./gradlew bench`):
+
+| | exact only | with Grisu3 |
+| --- | --- | --- |
+| mixed exponents | 63.5x | **3.5x** |
+| short decimals | 6.8x | **2.0x** |
+
+The JDK is not producing the same string — it lays the digits out differently
+and is not shortest for the smallest subnormals — so that is a scale reference,
+not an equivalence.
 
 ## Match safety (ReDoS)
 

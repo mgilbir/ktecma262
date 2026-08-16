@@ -46,8 +46,21 @@ public fun Double.toEcmaString(): String {
  *
  * Returns the significant digits with no leading or trailing zeros, paired with
  * the specification's `n`: the value is `0.<digits> * 10^n`.
+ *
+ * Grisu3 answers in 64-bit arithmetic for most values and declines when its
+ * accumulated rounding error could change the result; those fall through to the
+ * exact method below. Correctness therefore does not depend on the fast path
+ * being right about *which* values are hard — only on its refusing to answer
+ * when it is unsure.
  */
-internal fun shortestDigits(value: Double): Pair<String, Int> {
+internal fun shortestDigits(value: Double): Pair<String, Int> =
+    grisu3ShortestDigits(value) ?: exactShortestDigits(value)
+
+/**
+ * The exact algorithm: always right, and the arbiter whenever the fast path
+ * declines to answer.
+ */
+internal fun exactShortestDigits(value: Double): Pair<String, Int> {
     val bits = value.toRawBits()
     val biasedExponent = ((bits ushr 52) and 0x7FF).toInt()
     val mantissa = bits and 0x000FFFFFFFFFFFFFL
