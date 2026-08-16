@@ -97,6 +97,13 @@ val re = RegExp.compile("^" + RegExp.escape(userInput) + "$")
 - Annex B web-compatibility syntax by default, with strict ECMA-262 available
   via `Syntax.STRICT`
 
+**Numbers** — JavaScript's own number formatting and parsing, none of which any
+Kotlin target reproduces:
+
+- `Double.toEcmaString()` and `Double.toEcmaString(radix)`
+- `String.toEcmaDouble()` — `Number("…")`, correctly rounded
+- `Double.toEcmaFixed()`, `toEcmaExponential()`, `toEcmaPrecision()`
+
 ## API
 
 `RegExp` mirrors JavaScript's:

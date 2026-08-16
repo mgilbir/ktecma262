@@ -216,9 +216,6 @@ internal class Big(private val capacity: Int = FORMAT_LIMBS) {
         trim()
     }
 
-    /** Is the low bit set? */
-    fun isOdd(): Boolean = n != 0 && (w[0] and 1) == 1
-
     companion object {
         private const val MASK = 0xFFFFFFFFL
 
