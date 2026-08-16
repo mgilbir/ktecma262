@@ -387,6 +387,33 @@ val numberFuzz by tasks.registering(JavaExec::class) {
     }
 }
 
+/**
+ * Live differential fuzzing for the URI functions.
+ *
+ *   ./gradlew uriFuzz -Pcount=200000 -Pseed=7
+ */
+val uriFuzz by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Fuzz the URI functions against node and require identical results"
+    dependsOn("jvmTestClasses")
+
+    val jvmTest = kotlin.jvm().compilations.getByName("test")
+    classpath(jvmTest.output.allOutputs, jvmTest.runtimeDependencyFiles)
+    mainClass.set("io.github.mgilbir.ecma262.uri.UriFuzzMain")
+
+    javaLauncher.set(
+        javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) },
+    )
+
+    argumentProviders.add {
+        listOf(
+            (project.findProperty("count") as String?) ?: "20000",
+            (project.findProperty("seed") as String?) ?: "1",
+            layout.projectDirectory.file("tools/uri/fuzz-oracle.mjs").asFile.absolutePath,
+        )
+    }
+}
+
 /** Micro-benchmarks, with java.util.regex alongside for scale. `./gradlew bench` */
 val bench by tasks.registering(JavaExec::class) {
     group = "verification"
