@@ -184,6 +184,26 @@ magnitudes outside the double range resolve before a big integer exists.
 `StringToNumberBoundsTest` covers exponents of a billion, mantissas of 100,000
 digits, and long strings that are not literals at all.
 
+### Other radices, and why they are different
+
+```kotlin
+255.0.toEcmaString(16)  // "ff"
+0.5.toEcmaString(2)     // "0.1"
+0.1.toEcmaString(3)     // "0.0022002200220022002200220022002201"
+```
+
+This is the one function here that is **compatibility rather than
+conformance**. ECMA-262 says the result for a radix other than 10 is
+*implementation-approximated* — a string representation of the value in that
+radix, and nothing more. It does not say how many digits to emit, where to
+stop, or how to round, so there is no correct answer to be right about.
+
+What is implemented is V8's choice, because matching what JavaScript actually
+prints is the only useful target. The 21,280 recorded strings therefore *are*
+the contract rather than a corroboration of one, and if a future V8 changes
+them the differential test is what will say so. Radix 10 delegates to the
+specified path.
+
 ### Why this is provable rather than merely tested
 
 6.1.6.1.20 defines the result rather than an algorithm: the shortest digit

@@ -56,6 +56,15 @@
 - Formatting and parsing are now checked as inverses against each other, so the
   round-trip property no longer leans on the host's decimal parser.
 
+- `Double.toEcmaString(radix)` for radices 2 to 36. Unlike everything else
+  here this is compatibility rather than conformance: ECMA-262 calls the result
+  for a radix other than 10 *implementation-approximated* and defines nothing
+  further, so V8's behaviour is what is implemented and the 21,280 recorded
+  strings are the contract rather than a check on one. Radix 10 delegates to the
+  specified path. Four planted bugs are caught — dropping the round-half-to-even
+  step, removing the floor on the error term, skipping the zero fill above 2^53,
+  and stopping the fraction a digit early.
+
 - `Double.toEcmaFixed()`, `Double.toEcmaExponential()` and
   `Double.toEcmaPrecision()` — `Number.prototype.toFixed`, `toExponential` and
   `toPrecision` (21.1.3.3, 21.1.3.2, 21.1.3.5). Checked against node over a grid
