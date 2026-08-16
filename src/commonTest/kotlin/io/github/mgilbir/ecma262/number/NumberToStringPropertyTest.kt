@@ -130,6 +130,47 @@ class NumberToStringPropertyTest {
         }
     }
 
+    /**
+     * Formatting and parsing are inverses, checked against each other.
+     *
+     * The other round-trip assertions here go through the host's decimal parser.
+     * This one closes the loop with our own, so the pair is verified without
+     * depending on any platform at all: whatever `toEcmaString` writes,
+     * `toEcmaDouble` must read back as the identical double.
+     */
+    @Test
+    fun formattingAndParsingAreInverses() {
+        val rng = Lcg(4242)
+        var checked = 0
+        repeat(20_000) {
+            val value = Double.fromBits(rng.next())
+            if (value.isNaN() || value.isInfinite()) return@repeat
+            val text = value.toEcmaString()
+            assertEquals(
+                value.toRawBits(),
+                text.toEcmaDouble().toRawBits(),
+                "wrote $text but read it back as something else",
+            )
+            checked++
+        }
+        assertTrue(checked > 15_000, "too few usable values: $checked")
+
+        // The regions the random sweep barely reaches.
+        for (bits in 1L..3_000L) {
+            val value = Double.fromBits(bits)
+            assertEquals(value.toRawBits(), value.toEcmaString().toEcmaDouble().toRawBits())
+        }
+        for (exponent in 1..2046) {
+            val value = Double.fromBits(exponent.toLong() shl 52)
+            assertEquals(value.toRawBits(), value.toEcmaString().toEcmaDouble().toRawBits())
+        }
+        for (i in 1..2_000) {
+            for (value in listOf(i.toDouble(), i / 10.0, i / 1000.0, i * 1e18, i * 1e-20)) {
+                assertEquals(value.toRawBits(), value.toEcmaString().toEcmaDouble().toRawBits())
+            }
+        }
+    }
+
     /** The layout rules must reproduce the digits they were given. */
     @Test
     fun layoutPreservesTheDigits() {

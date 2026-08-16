@@ -131,7 +131,7 @@ threads; matching allocates its own small matcher per call. With `g` or `y` the
 instance carries the mutable `lastIndex` cursor and must not be shared without
 synchronisation.
 
-## Number formatting
+## Numbers
 
 `Number::toString` — ECMA-262 6.1.6.1.20 — is what JavaScript prints for a
 number, and no Kotlin target reproduces it. Kotlin/JS does, because it *is*
@@ -158,6 +158,32 @@ not shortest for the smallest subnormals — it prints `4.9E-324` where `5e-324`
 round-trips — which rules out the tempting shortcut of reusing the platform's
 digits and re-laying them out.
 
+### Parsing
+
+`String.toEcmaDouble()` is `StringToNumber` (7.1.4.1.1) — what `Number("…")`
+does, not what `parseFloat` does, so the whole string must be a numeric literal:
+
+```kotlin
+"1e3".toEcmaDouble()        // 1000.0
+"0x1f".toEcmaDouble()       // 31.0    — but "-0x1f" is NaN, the grammar takes no sign
+"  -1.5e-3  ".toEcmaDouble() // -0.0015 — surrounding whitespace is allowed
+"".toEcmaDouble()           // 0.0     — an empty literal is +0
+"12abc".toEcmaDouble()      // NaN     — not parseFloat
+```
+
+The result is correctly rounded, which can turn on the 767th significant digit:
+`"2.2250738585072012e-308"` — the value that used to hang `Double.parseDouble`
+— must give `2.2250738585072014e-308`, and `"9007199254740993"` must give
+`9007199254740992`.
+
+Because correctly rounded parsing is where decimal handling has historically
+been attacked, every loop is bounded before any large arithmetic starts:
+significant digits are capped with the remainder folded into a sticky flag that
+can only break an exact tie, the exponent is clamped as it is read, and
+magnitudes outside the double range resolve before a big integer exists.
+`StringToNumberBoundsTest` covers exponents of a billion, mantissas of 100,000
+digits, and long strings that are not literals at all.
+
 ### Why this is provable rather than merely tested
 
 6.1.6.1.20 defines the result rather than an algorithm: the shortest digit
@@ -168,6 +194,10 @@ the subnormal range and short decimals:
 
 - **round trip** — parsing the output returns the same double, bit for bit;
 - **shortest** — no decimal with fewer significant digits does.
+
+With the parser in place the round trip is also checked against *our own*
+parser, so the pair is verified without depending on any platform: whatever
+`toEcmaString` writes, `toEcmaDouble` reads back as the identical double.
 
 That is a stronger position than the regular expression side, where the
 specification's semantics can only be checked against an interpreter. It also

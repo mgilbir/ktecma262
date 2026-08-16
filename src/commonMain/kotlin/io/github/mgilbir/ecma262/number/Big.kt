@@ -16,10 +16,10 @@ package io.github.mgilbir.ecma262.number
  * scaling loops into unbounded allocation; overflowing a fixed buffer throws
  * instead, which is a failure that gets noticed.
  */
-internal class Big {
+internal class Big(private val capacity: Int = FORMAT_LIMBS) {
 
     /** Little-endian 32-bit limbs, each held in the low half of an `Int`. */
-    private val w = IntArray(LIMBS)
+    private val w = IntArray(capacity)
 
     /** Number of significant limbs; zero means the value is zero. */
     private var n = 0
@@ -155,17 +155,75 @@ internal class Big {
     }
 
     private fun checkRoom(limbs: Int) {
-        check(limbs <= LIMBS) {
-            "Big overflow: needed $limbs limbs of $LIMBS. " +
-                "The scaling loops are bounded by the double exponent range, so this is a bug."
+        check(limbs <= capacity) {
+            "Big overflow: needed $limbs limbs of $capacity. " +
+                "Every loop here is bounded by the double exponent range, so this is a bug."
         }
     }
 
-    private companion object {
-        const val MASK = 0xFFFFFFFFL
+    /** Number of significant bits; zero for zero. */
+    fun bitLength(): Int {
+        if (n == 0) return 0
+        var top = w[n - 1].toLong() and MASK
+        var bits = 0
+        while (top != 0L) {
+            bits++
+            top = top ushr 1
+        }
+        return (n - 1) * 32 + bits
+    }
+
+    /** this >>= bits */
+    fun shiftRight(bits: Int) {
+        if (n == 0 || bits == 0) return
+        val words = bits ushr 5
+        val rest = bits and 31
+        if (words >= n) {
+            w.fill(0, 0, n)
+            n = 0
+            return
+        }
+        if (rest == 0) {
+            for (i in 0 until n - words) w[i] = w[i + words]
+        } else {
+            for (i in 0 until n - words - 1) {
+                val lo = (w[i + words].toLong() and MASK) ushr rest
+                val hi = (w[i + words + 1].toLong() and MASK) shl (32 - rest)
+                w[i] = (lo or hi).toInt()
+            }
+            w[n - words - 1] = ((w[n - 1].toLong() and MASK) ushr rest).toInt()
+        }
+        w.fill(0, n - words, n)
+        n -= words
+        trim()
+    }
+
+    /** this += v, for a small non-negative addend. */
+    fun addSmall(v: Int) {
+        require(v >= 0)
+        if (v == 0) return
+        var carry = v.toLong() and MASK
+        var i = 0
+        while (carry != 0L) {
+            checkRoom(i + 1)
+            val sum = (limb(i).toLong() and MASK) + carry
+            w[i] = sum.toInt()
+            carry = sum ushr 32
+            i++
+            if (i > n) n = i
+        }
+        if (i > n) n = i
+        trim()
+    }
+
+    /** Is the low bit set? */
+    fun isOdd(): Boolean = n != 0 && (w[0] and 1) == 1
+
+    companion object {
+        private const val MASK = 0xFFFFFFFFL
 
         /**
-         * 2048 bits.
+         * 2048 bits, enough for formatting.
          *
          * The widest intermediate is the numerator for the smallest subnormals:
          * it starts around 2^55, is multiplied by ten up to 324 times while
@@ -173,6 +231,16 @@ internal class Big {
          * has the upper gap added. That peaks near 1200 bits, so this leaves
          * room to spare while still being a hard ceiling.
          */
-        const val LIMBS = 64
+        const val FORMAT_LIMBS = 64
+
+        /**
+         * 6144 bits, for parsing.
+         *
+         * A correctly rounded decimal needs up to ~770 significant digits to
+         * decide, which with an exponent of 10^308 and a shift of up to 2^1074
+         * lands near 4700 bits. Parsing allocates a wider buffer rather than
+         * making every formatting call pay for one.
+         */
+        const val PARSE_LIMBS = 192
     }
 }

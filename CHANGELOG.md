@@ -33,6 +33,29 @@
   slower than `java.lang.Double.toString` at the extremes of the exponent range
   and 6.8x slower for everyday values. A table-driven method would close that.
 
+- `String.toEcmaDouble()` — `StringToNumber`, ECMA-262 7.1.4.1.1, the
+  conversion `Number("…")` performs. The whole string must be a numeric
+  literal, so this is not `parseFloat`; `0x`/`0o`/`0b` literals are accepted but
+  take no sign, and an empty or all-whitespace string is `+0`. All 68 grammar
+  and rounding cases are taken from node.
+
+  Correctly rounded, which can turn on the 767th significant digit. Bounded
+  against the inputs that have historically hung decimal parsers: significant
+  digits are capped with the rest folded into a sticky flag, the exponent is
+  clamped as it is read, and out-of-range magnitudes resolve before any big
+  integer is built.
+
+  Three planted bugs are caught — ties rounding up rather than to even,
+  accepting trailing garbage, and ignoring the sticky flag. The third initially
+  was **not**: no test exercised a value truncated at the cap that was also an
+  exact tie, because a genuine tie never needs more than 767 digits.
+  `digitsBeyondTheCapBreakTies` constructs one — the exact midpoint between 1
+  and the next double, padded past the cap, with a single digit beyond it that
+  decides the result.
+
+- Formatting and parsing are now checked as inverses against each other, so the
+  round-trip property no longer leans on the host's decimal parser.
+
 - A differential fixture for numbers, checked against node over 231,948 values:
   a deterministic sweep of the bit space, every subnormal up to 20,000, every
   power of two, and short decimals. Walked from an index on both sides, so the
