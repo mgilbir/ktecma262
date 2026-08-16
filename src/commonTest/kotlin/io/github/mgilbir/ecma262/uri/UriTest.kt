@@ -87,14 +87,15 @@ class UriTest {
         var threwCount = 0
         for (case in UriFixture.EXPLICIT) {
             val input = stringOf(case.units)
-            if (case.expected == null) {
+            val expected = case.expectedUnits?.let { stringOf(it) }
+            if (expected == null) {
                 threwCount++
                 assertFailsWith<UriError>("${case.function} should reject ${describe(input)}") {
                     apply(case.function, input)
                 }
             } else {
                 assertEquals(
-                    case.expected,
+                    expected,
                     apply(case.function, input),
                     "${case.function}(${describe(input)})",
                 )
