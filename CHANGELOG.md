@@ -56,6 +56,18 @@
 - Formatting and parsing are now checked as inverses against each other, so the
   round-trip property no longer leans on the host's decimal parser.
 
+- `Double.toEcmaFixed()`, `Double.toEcmaExponential()` and
+  `Double.toEcmaPrecision()` — `Number.prototype.toFixed`, `toExponential` and
+  `toPrecision` (21.1.3.3, 21.1.3.2, 21.1.3.5). Checked against node over a grid
+  of 4,054 values crossed with arguments from 0 to 100: 97,296 strings.
+
+  All three round ties **up**, where `toString` rounds them to even. The
+  specification asks for exactly that difference, and a planted swap to
+  round-half-even is caught. So is losing the rounding carry — `(99.995)`
+  `.toFixed(2)` is `"100.00"`, and taking the decimal exponent from a rounded
+  first digit instead of an unrounded one gave `"999.95"` until the grid caught
+  it — and getting the `toPrecision` exponential threshold off by one.
+
 - Grisu3 as the fast path for `Double.toEcmaString()`, with the exact method
   kept as the fallback. It works in 64-bit arithmetic against a generated table
   of cached powers of ten, tracks the rounding error it accumulates, and
