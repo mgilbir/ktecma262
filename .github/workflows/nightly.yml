@@ -84,6 +84,40 @@ jobs:
           -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
           -Pseed=${{ matrix.seed }}${{ github.run_number }}
 
+  uri-fuzz:
+    # Encoding is verified exhaustively during a build; decoding cannot be,
+    # because its input is text. Rejecting malformed escapes is the security
+    # property, so this is where the ways to be malformed get explored.
+    name: URI fuzz against node (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Fuzz
+        run: >
+          ./gradlew uriFuzz
+          -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
+          -Pseed=${{ matrix.seed }}${{ github.run_number }}
+
   unicode-drift:
     # Regenerates the tables from upstream and fails if they differ from the
     # committed ones. A failure here usually means Unicode published new data

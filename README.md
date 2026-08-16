@@ -104,6 +104,11 @@ Kotlin target reproduces:
 - `String.toEcmaDouble()` — `Number("…")`, correctly rounded
 - `Double.toEcmaFixed()`, `toEcmaExponential()`, `toEcmaPrecision()`
 
+**URIs** — the four escaping functions, which common Kotlin does not have:
+
+- `String.encodeUriComponent()`, `String.encodeUri()`
+- `String.decodeUriComponent()`, `String.decodeUri()`
+
 ## API
 
 `RegExp` mirrors JavaScript's:
@@ -296,6 +301,32 @@ Against `java.lang.Double.toString` (`./gradlew bench`):
 The JDK is not producing the same string — it lays the digits out differently
 and is not shortest for the smallest subnormals — so that is a scale reference,
 not an equivalence.
+
+## URI escaping
+
+```kotlin
+"a b+c/d?e=f&g".encodeUriComponent()     // "a%20b%2Bc%2Fd%3Fe%3Df%26g"
+"http://x.com/a b?c=d".encodeUri()       // "http://x.com/a%20b?c=d"
+"http://x.com/a%20b%2Fc".decodeUri()     // "http://x.com/a b%2Fc" - %2F stays
+```
+
+`java.net.URLEncoder` is **not** this function. It implements
+`application/x-www-form-urlencoded`: a space becomes `+`, and `~`, `!`, `*`,
+`'`, `(` and `)` are escaped when ECMA-262 leaves them alone. It is correct for
+form bodies and wrong for URIs, and reaching for it is a standing source of
+subtly broken links. Common Kotlin has no equivalent at all.
+
+Escaping is what callers rely on to stop untrusted text from changing a URI's
+structure, so it is verified over **every one of the 1,114,112 code points**
+rather than a sample — the same reason `RegExp.escape` is. Unpaired surrogates
+throw `UriError`, as they must: they have no UTF-8 form.
+
+Decoding is where the security lives, and it rejects what UTF-8 forbids:
+overlong forms, encoded surrogates, sequences past U+10FFFF, and truncated
+escapes. Accepting any of those turns a decoder into a way to smuggle
+characters past a filter. Since decoding's input is text and cannot be
+enumerated, `./gradlew uriFuzz` explores it against node; 600,000 cases run
+clean, roughly half of them rejections.
 
 ## Match safety (ReDoS)
 

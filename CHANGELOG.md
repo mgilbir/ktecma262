@@ -4,6 +4,27 @@
 
 ### Added
 
+- `String.encodeUriComponent()`, `encodeUri()`, `decodeUriComponent()` and
+  `decodeUri()` in `io.github.mgilbir.ecma262.uri` — ECMA-262 19.2.6. Common
+  Kotlin has no equivalent, and `java.net.URLEncoder` is a different algorithm
+  (`application/x-www-form-urlencoded`) that is wrong for URIs.
+
+  Encoding is verified over every one of the 1,114,112 code points against
+  node, not a sample: escaping is what stops untrusted text from changing a
+  URI's structure. Unpaired surrogates throw `UriError`.
+
+  Decoding rejects what UTF-8 forbids — overlong forms, encoded surrogates,
+  code points past U+10FFFF, truncated escapes — since accepting them turns a
+  decoder into a filter bypass. Its input is text and cannot be enumerated, so
+  `./gradlew uriFuzz` covers it: 600,000 cases clean, about half of them
+  rejections, and it runs nightly on three seeds.
+
+  Five planted bugs are caught: a wrong unescaped set, accepting overlong
+  encodings, accepting encoded surrogates, decoding reserved escapes in
+  `decodeUri`, and substituting U+FFFD for a lone surrogate instead of throwing.
+
+
+
 - `Double.toEcmaString()` in `io.github.mgilbir.ecma262.number` — JavaScript's
   `Number::toString`, ECMA-262 6.1.6.1.20. No Kotlin target produces it:
   Kotlin/JS does because it is JavaScript, but Kotlin/JVM and Kotlin/Native
