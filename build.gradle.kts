@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "io.github.mgilbir"
-version = "0.1.4"
+version = "0.2.0"
 
 /** Build-relative directory the Central Portal bundle is staged in. */
 val CENTRAL_BUNDLE_DIR = "central-bundle"

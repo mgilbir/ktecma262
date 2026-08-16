@@ -2,26 +2,35 @@
 
 [![CI](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml/badge.svg)](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml)
 
-ECMA-262 (JavaScript) algorithms in pure Kotlin, for Kotlin Multiplatform: a
-regular expression engine, and JavaScript's number formatting.
+ECMA-262 (JavaScript) algorithms in pure Kotlin, for Kotlin Multiplatform:
 
-Patterns and match results behave exactly as they do in JavaScript — the same
-flags, the same Annex B web-compatibility syntax, the same capture and
-replacement semantics, and the same UTF-16 offsets. Correctness is established
-by differential testing against a real JavaScript engine rather than by reading
-the specification: every build replays a recorded corpus of ~36,000 cases, and
-the fuzzer has run millions more.
+- a **regular expression** engine — flags, Annex B syntax, `\p{…}` pinned to a
+  known Unicode version, and JavaScript's exact `lastIndex` semantics;
+- **numbers** — `toString`, `toFixed`, `toExponential`, `toPrecision`,
+  `toString(radix)` and `Number("…")`, correctly rounded;
+- **URIs** — the four escaping functions, which common Kotlin lacks entirely;
+- **text** — Unicode normalisation, identifier validation, and the trimming and
+  rounding rules Kotlin gets differently.
 
-Reach for this when you need regex features Kotlin's own `Regex` cannot express
-the same way — JavaScript's exact `lastIndex` semantics, Annex B behaviour,
-`\p{…}` pinned to a known Unicode version — or when you are porting JavaScript
-code and need identical results.
+Reach for it when you are porting JavaScript and need identical results, or
+when the platform's own answer is subtly not JavaScript's. Several of these are
+not merely missing from Kotlin but *silently different*: `1.0.toString()` is
+`"1.0"` and not `"1"`, `kotlin.math.round(0.5)` is `0` and not `1`, and
+`"x\uFEFF".trim()` keeps the byte order mark.
+
+Correctness is established by testing rather than by reading the specification
+and hoping. Where a conformance suite exists — Unicode's `NormalizationTest.txt`,
+Test262 — its expectations are used directly, because no implementation produced
+them. Where the answer is decidable, it is decided: every one of the 1,114,112
+code points, not a sample. Where it is neither, a fuzzer runs against a real
+JavaScript engine nightly. Bugs are planted deliberately to check the tests can
+still see them.
 
 ## Installation
 
 ```kotlin
 dependencies {
-    implementation("io.github.mgilbir:ktecma262:0.1.4")
+    implementation("io.github.mgilbir:ktecma262:0.2.0")
 }
 ```
 
@@ -679,8 +688,8 @@ tag is the point of no return, not a later button.
 ```bash
 # 1. bump `version` in build.gradle.kts, commit
 # 2. tag and push
-git tag -a v0.1.4 -m "ktecma262 0.1.4"
-git push origin v0.1.4
+git tag -a v0.2.0 -m "ktecma262 0.2.0"
+git push origin v0.2.0
 ```
 
 Publication is skipped — with a notice, not a failure — unless these repository

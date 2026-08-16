@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
+
+The library stops being only a regular expression engine.
+
+Four more corners of ECMA-262 arrive, each one something no Kotlin target
+reproduces on its own: JavaScript's number formatting and parsing, the four URI
+escaping functions, Unicode normalisation, and identifier validation — plus the
+handful of places Kotlin returns a *different answer* rather than an error.
+
+Nothing in the regular expression engine changed behaviour, so upgrading from
+0.1.4 is safe; the version is 0.2.0 because the surface grew rather than
+because anything moved. The JVM artifact grows from 176 KiB to about 269 KiB,
+almost all of it the normalisation tables. Shrinkers remove what you do not
+call — the tables are a single leaf class with one inbound reference — and on
+plain JVM an unused class is never even loaded.
 
 ### Added
 
