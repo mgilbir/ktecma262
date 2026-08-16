@@ -50,6 +50,40 @@ jobs:
           -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
           -Pseed=${{ matrix.seed }}${{ github.run_number }}
 
+  number-fuzz:
+    # The number functions are covered by fixed fixtures during a build; this is
+    # the only place they meet cases nobody chose. That matters most for the
+    # parser, whose input space is text rather than a bounded set of doubles.
+    name: Number fuzz against node (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Fuzz
+        run: >
+          ./gradlew numberFuzz
+          -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
+          -Pseed=${{ matrix.seed }}${{ github.run_number }}
+
   unicode-drift:
     # Regenerates the tables from upstream and fails if they differ from the
     # committed ones. A failure here usually means Unicode published new data
@@ -87,6 +121,22 @@ jobs:
             exit 1
           fi
           echo "Tables match a fresh generation from upstream."
+
+      - name: Check the Test262 number fixture is current
+        # Regenerates from tc39/test262 and fails if upstream has changed. Like
+        # the Unicode check above, a failure here is news rather than a defect.
+        run: |
+          set -euo pipefail
+          node tools/test262/gen-number-fixture.mjs \
+            src/commonTest/kotlin/io/github/mgilbir/ecma262/number/Test262NumberFixture.kt \
+            "$RUNNER_TEMP/test262-cache"
+          if ! git diff --exit-code --stat -- \
+              src/commonTest/kotlin/io/github/mgilbir/ecma262/number/Test262NumberFixture.kt; then
+            echo "::error::Test262's Number tests have changed upstream."
+            echo "Regenerate the fixture and check the new cases still pass."
+            exit 1
+          fi
+          echo "The Test262 number fixture matches upstream."
 
       - name: Verify every property against node
         # Independent of the diff above: this checks the tables against the

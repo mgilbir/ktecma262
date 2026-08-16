@@ -104,6 +104,28 @@
 
 ### Testing
 
+- A nightly differential fuzz for the number functions, three seeds of 500,000
+  cases each, alongside the existing regex fuzz. Fresh cases rather than a
+  recorded set: random doubles through `toString`, `toFixed`, `toExponential`,
+  `toPrecision` and `toString(radix)`, and random strings — signed, spaced,
+  radix-prefixed, corrupted, up to 1,800 digits long — through the parser.
+  900,000 cases run clean locally.
+
+  Building it found a gap in itself. A planted bug that accepted a sign before a
+  radix prefix went undetected, because the generator almost never produced one;
+  it now emits signed and mixed-case radix literals, and the same plant is
+  caught within 435 cases.
+
+- Test262's Number formatting tests, 205 cases across `toFixed`,
+  `toExponential`, `toPrecision` and `toString`. Every expectation is the
+  literal from the suite's own assertion rather than an engine's answer, which
+  makes this the one source here that no implementation produced. The value is
+  really the inputs: corner cases chosen by people who knew where
+  implementations go wrong. The nightly regenerates the fixture and fails if
+  upstream has changed.
+
+
+
 - A fourth V8 defect is recognised and skipped. A non-multiline `$` lets V8
   start its scan near the end of the input, using a minimum match length
   counted in code points but applied to a UTF-16 index, so an astral tail

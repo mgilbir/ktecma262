@@ -381,7 +381,9 @@ Correctness rests on four layers:
    `SurrogateBoundaryTest.backreferenceComparesCodePointsUnderUnicode` now
    guards.
 3. **Test262** — the conformance suite's generated `v`-flag class tests (114
-   cases covering nesting, set operations, `\q{…}` and properties of strings),
+   cases covering nesting, set operations, `\q{…}` and properties of strings)
+   and its Number formatting tests (205 cases, expectations taken from the
+   suite's own assertions rather than from any engine),
    replayed offline. These are written by the specification's authors, so they
    are independent of the node-derived corpus above. Regenerate with
    `node tools/test262/gen-unicodesets-fixture.mjs …`.
@@ -392,6 +394,12 @@ Correctness rests on four layers:
 The fuzzer also generates unstructured "syntax soup" patterns, not just ones its
 own grammar knows how to build — that is what checks the parser against
 constructs this codebase has never heard of.
+
+Numbers get the same two layers. `./gradlew numberFuzz -Pcount=200000 -Pseed=7`
+generates fresh cases — random doubles through every method, and random strings
+through the parser — and compares each against node. The parser is what needs
+it: its input space is text, and no recorded fixture covers the ways a string
+can almost be a numeric literal.
 
 ### Continuous integration
 

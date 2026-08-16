@@ -359,6 +359,34 @@ val fuzz by tasks.registering(JavaExec::class) {
     }
 }
 
+/**
+ * Live differential fuzzing for the number functions. Like [fuzz], not wired
+ * into `check`: it needs node on PATH.
+ *
+ *   ./gradlew numberFuzz -Pcount=200000 -Pseed=7
+ */
+val numberFuzz by tasks.registering(JavaExec::class) {
+    group = "verification"
+    description = "Fuzz the number functions against node and require identical results"
+    dependsOn("jvmTestClasses")
+
+    val jvmTest = kotlin.jvm().compilations.getByName("test")
+    classpath(jvmTest.output.allOutputs, jvmTest.runtimeDependencyFiles)
+    mainClass.set("io.github.mgilbir.ecma262.number.NumberFuzzMain")
+
+    javaLauncher.set(
+        javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) },
+    )
+
+    argumentProviders.add {
+        listOf(
+            (project.findProperty("count") as String?) ?: "20000",
+            (project.findProperty("seed") as String?) ?: "1",
+            layout.projectDirectory.file("tools/numbers/fuzz-oracle.mjs").asFile.absolutePath,
+        )
+    }
+}
+
 /** Micro-benchmarks, with java.util.regex alongside for scale. `./gradlew bench` */
 val bench by tasks.registering(JavaExec::class) {
     group = "verification"

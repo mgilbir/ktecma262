@@ -6,3 +6,4 @@ kotlin-js-store/
 # Local tool caches
 .kotlin/
 node_modules/
+.test262-cache/
