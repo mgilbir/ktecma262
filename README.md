@@ -115,6 +115,7 @@ gets differently:
 - `String.normalize(NormalizationForm.NFC | NFD | NFKC | NFKD)`
 - `String.ecmaTrim()`, `ecmaTrimStart()`, `ecmaTrimEnd()`
 - `EcmaMath.round/trunc/sign/clz32/imul/fround`
+- `String.isEcmaIdentifierName()`, `isEcmaIdentifier()`, `isEcmaReservedWord()`
 
 ## API
 
@@ -308,6 +309,27 @@ Against `java.lang.Double.toString` (`./gradlew bench`):
 The JDK is not producing the same string — it lays the digits out differently
 and is not shortest for the smallest subnormals — so that is a scale reference,
 not an equivalence.
+
+## Identifiers
+
+```kotlin
+"foo".isEcmaIdentifierName()      // true  -> obj.foo
+"foo-bar".isEcmaIdentifierName()  // false -> obj["foo-bar"]
+"if".isEcmaIdentifierName()       // true  -> obj.if is legal
+"if".isEcmaIdentifier()           // false -> var if is not
+"let".isEcmaIdentifier(strict = true)      // false, only in strict code
+"await".isEcmaIdentifier(module = true)    // false, only inside a module
+```
+
+Which of the two questions you want depends on what you are generating: a
+property key needs an `IdentifierName`, a variable needs an `Identifier`, and
+keywords are the former but not the latter. The words reserved only in some
+contexts - `let`, `static`, `await`, `yield` and the strict-mode set - are
+parameters rather than guesses.
+
+Verified two ways: every code point against the composed rule from 12.7, and a
+sample against what node's parser actually accepts, since only the second is
+the real question and only the first can be exhaustive.
 
 ## Where Kotlin disagrees with JavaScript
 

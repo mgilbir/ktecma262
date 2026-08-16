@@ -4,6 +4,28 @@
 
 ### Added
 
+- `String.isEcmaIdentifierName()`, `isEcmaIdentifier()` and
+  `isEcmaReservedWord()` in `io.github.mgilbir.ecma262.text` - ECMA-262 12.7,
+  reusing the Unicode tables already compiled in.
+
+  The two questions are different and both are useful: a property key needs an
+  `IdentifierName`, a binding needs an `Identifier`, and keywords are the first
+  but not the second. Words reserved only in some contexts - `let` and the
+  strict-mode set, `await` in a module, `yield` in a generator - are parameters
+  rather than assumptions.
+
+  Verified at two levels: every code point against the composed rule from 12.7,
+  and a sample against what node's parser actually accepts. The second caught a
+  mistake in the first oracle: `o.a-b` parses as `(o.a) - b`, so testing member
+  access reported `a-b` as a valid name. An object literal key is the correct
+  probe.
+
+  Five planted bugs are caught. One more showed that an explicit lone-surrogate
+  branch was dead code, since a surrogate is in neither `ID_Start` nor
+  `ID_Continue`; it has been removed rather than left as decoration.
+
+
+
 - `String.ecmaTrim()`, `ecmaTrimStart()`, `ecmaTrimEnd()` and `EcmaMath` in
   `io.github.mgilbir.ecma262.text` and `.number`. These are the places Kotlin
   disagrees with JavaScript by returning a different answer rather than an
