@@ -109,6 +109,10 @@ Kotlin target reproduces:
 - `String.encodeUriComponent()`, `String.encodeUri()`
 - `String.decodeUriComponent()`, `String.decodeUri()`
 
+**Text** — Unicode normalisation, which common Kotlin has no equivalent for:
+
+- `String.normalize(NormalizationForm.NFC | NFD | NFKC | NFKD)`
+
 ## API
 
 `RegExp` mirrors JavaScript's:
@@ -301,6 +305,33 @@ Against `java.lang.Double.toString` (`./gradlew bench`):
 The JDK is not producing the same string — it lays the digits out differently
 and is not shortest for the smallest subnormals — so that is a scale reference,
 not an equivalence.
+
+## Normalisation
+
+```kotlin
+"e\u0301".normalize()                          // "é"  - combining acute composed
+"é".normalize(NormalizationForm.NFD)           // "e\u0301"
+"\uFB01".normalize(NormalizationForm.NFKC)     // "fi" - the ligature unpicked
+```
+
+`java.text.Normalizer` is JVM-only and Kotlin/Native has nothing, so
+multiplatform code comparing user-entered text has been comparing sequences
+that look identical and are not. That matters beyond display: a username, a
+filename or a domain compared without normalising can be spoofed by a different
+encoding of the same glyphs.
+
+The tables come from the UCD and are generated, not transcribed. Hangul is
+absent from them deliberately — its mappings are arithmetic, and 11,172
+syllables would dwarf everything else.
+
+Correctness rests on Unicode's own conformance suite. `NormalizationTest.txt`
+supplies 20,034 rows whose expectations no implementation produced, and each is
+checked against the invariants the file states — every one of its five columns
+must map to the same place under each form, which is what catches an
+implementation that is right about examples and wrong about idempotence.
+Generation refuses to write the fixture if node disagrees with any row, so the
+two sources are known to agree first. On top of that, all 1,112,064 code points
+are checked individually in all four forms against node.
 
 ## URI escaping
 

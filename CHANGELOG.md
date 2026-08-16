@@ -4,6 +4,29 @@
 
 ### Added
 
+- `String.normalize()` in `io.github.mgilbir.ecma262.text` — ECMA-262 22.1.3.15,
+  which defers to UAX #15, in all four forms. `java.text.Normalizer` is JVM-only
+  and Kotlin/Native has nothing, so multiplatform code comparing user-entered
+  text has been comparing sequences that look identical and are not.
+
+  Tables are generated from the UCD, with decompositions stored fully expanded
+  so normalising is a lookup rather than a recursion, and Hangul left out
+  because its mappings are arithmetic.
+
+  Checked against Unicode's own `NormalizationTest.txt`: 20,034 rows whose
+  expectations no implementation produced, each verified against the invariants
+  the file states — all five columns must agree under each form. Generation
+  fails if node disagrees with any row. Every one of the 1,112,064 code points
+  is then checked individually in all four forms against node.
+
+  Six planted bugs are caught: unstable canonical ordering, ignoring the
+  composition blocking rule, dropping a Hangul trailing jamo, NFKC using
+  canonical decomposition, and — in the generator — ignoring
+  `Full_Composition_Exclusion` and storing decompositions one step deep instead
+  of fully expanded.
+
+
+
 - `String.encodeUriComponent()`, `encodeUri()`, `decodeUriComponent()` and
   `decodeUri()` in `io.github.mgilbir.ecma262.uri` — ECMA-262 19.2.6. Common
   Kotlin has no equivalent, and `java.net.URLEncoder` is a different algorithm
