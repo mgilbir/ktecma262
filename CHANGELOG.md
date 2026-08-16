@@ -2,7 +2,41 @@
 
 ## Unreleased
 
-No library changes — the engine behaves exactly as it does in 0.1.4.
+### Added
+
+- `Double.toEcmaString()` in `io.github.mgilbir.ecma262.number` — JavaScript's
+  `Number::toString`, ECMA-262 6.1.6.1.20. No Kotlin target produces it:
+  Kotlin/JS does because it is JavaScript, but Kotlin/JVM and Kotlin/Native
+  print `1.0`, `1.0E21` and `4.9E-324` where JavaScript prints `1`, `1e+21` and
+  `5e-324`. Over 200,000 random doubles the JVM's string differs 98.4% of the
+  time.
+
+  Almost all of that is layout — JavaScript stays positional out to 10^21 and in
+  to 10^-6 — but not all of it: a JDK 21 `Double.toString` is not shortest for
+  the smallest subnormals, so reusing the platform digits and re-laying them out
+  would be wrong in exactly the cases hardest to notice.
+
+  The specification defines the result rather than an algorithm, which makes two
+  properties equivalent to it: the output round-trips, and no shorter decimal
+  does. Both are checked over random doubles, every power of two, the subnormal
+  range and short decimals, so the tests hold any implementation to the
+  specification rather than to this one. Four planted bugs — an extra digit, a
+  missing round-up, ignoring round-half-to-even, and dropping the asymmetric gap
+  below powers of two — are each caught by the property that should catch them.
+
+  Ties escape both properties, since both candidates round-trip and are equally
+  short. Rounding them down instead of to the even significand costs 48 values
+  in 231,948; the differential fixture and an explicit test carry that rule.
+
+  Implemented with the exact rational method of Steele & White as presented by
+  Burger & Dybvig: big integers, no lookup tables. Correctness first — it is 63x
+  slower than `java.lang.Double.toString` at the extremes of the exponent range
+  and 6.8x slower for everyday values. A table-driven method would close that.
+
+- A differential fixture for numbers, checked against node over 231,948 values:
+  a deterministic sweep of the bit space, every subnormal up to 20,000, every
+  power of two, and short decimals. Walked from an index on both sides, so the
+  fixture is 3 KB rather than a megabyte.
 
 ### Testing
 

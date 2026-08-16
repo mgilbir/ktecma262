@@ -1,5 +1,6 @@
 package io.github.mgilbir.ecma262
 
+import io.github.mgilbir.ecma262.number.toEcmaString
 import java.util.regex.Pattern as JdkPattern
 import kotlin.system.measureNanoTime
 
@@ -157,6 +158,39 @@ object BenchmarkMain {
         run {
             val re = RegExp.compile("\\s+", "g")
             bench("split on whitespace, 100k chars", 20) { re.split(text) }
+        }
+
+        println("\nnumber formatting:")
+        run {
+            // A spread across the whole exponent range, so the scaling loops are
+            // exercised rather than just the common case near 1.
+            val values = DoubleArray(2_000)
+            var state = 12345L
+            for (i in values.indices) {
+                state = state * 6364136223846793005L + 1442695040888963407L
+                val d = Double.fromBits(state)
+                values[i] = if (d.isNaN() || d.isInfinite()) 1.5 else d
+            }
+            // The JDK does not produce the same string - it lays the digits out
+            // differently and is not shortest for the smallest subnormals - so
+            // this is a scale reference, not an equivalence.
+            bench(
+                "toEcmaString, mixed exponents",
+                20,
+                jdk = { for (v in values) java.lang.Double.toString(v) },
+            ) {
+                for (v in values) v.toEcmaString()
+            }
+        }
+        run {
+            val values = DoubleArray(2_000) { (it + 1) / 10.0 }
+            bench(
+                "toEcmaString, short decimals",
+                20,
+                jdk = { for (v in values) java.lang.Double.toString(v) },
+            ) {
+                for (v in values) v.toEcmaString()
+            }
         }
 
         println("\n${results.size} benchmarks completed")

@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml/badge.svg)](https://github.com/mgilbir/ktecma262/actions/workflows/ci.yml)
 
-An ECMA-262 (JavaScript) regular expression engine in pure Kotlin, for Kotlin
-Multiplatform.
+ECMA-262 (JavaScript) algorithms in pure Kotlin, for Kotlin Multiplatform: a
+regular expression engine, and JavaScript's number formatting.
 
 Patterns and match results behave exactly as they do in JavaScript — the same
 flags, the same Annex B web-compatibility syntax, the same capture and
@@ -130,6 +130,63 @@ A `RegExp` compiled without `g` or `y` is immutable and safe to share between
 threads; matching allocates its own small matcher per call. With `g` or `y` the
 instance carries the mutable `lastIndex` cursor and must not be shared without
 synchronisation.
+
+## Number formatting
+
+`Number::toString` — ECMA-262 6.1.6.1.20 — is what JavaScript prints for a
+number, and no Kotlin target reproduces it. Kotlin/JS does, because it *is*
+JavaScript; Kotlin/JVM and Kotlin/Native both disagree:
+
+```kotlin
+import io.github.mgilbir.ecma262.number.toEcmaString
+
+1.0.toEcmaString()       // "1"          — JVM and Native print "1.0"
+1e21.toEcmaString()      // "1e+21"      — "1.0E21"
+1e20.toEcmaString()      // "100000000000000000000"
+1e-7.toEcmaString()      // "1e-7"       — "1.0E-7"
+(-0.0).toEcmaString()    // "0"          — "-0.0"
+Double.MIN_VALUE.toEcmaString()  // "5e-324" — "4.9E-324"
+```
+
+Over 200,000 random doubles, the JVM's string differs from JavaScript's **98.4%**
+of the time. Almost all of that is layout: JavaScript stays positional out to
+10^21 and in to 10^-6, where the JVM switches to scientific notation at 10^7 and
+10^-3, never omits the `.0`, and prints `-0.0`.
+
+The digits agree far more often, but not always. A JDK 21 `Double.toString` is
+not shortest for the smallest subnormals — it prints `4.9E-324` where `5e-324`
+round-trips — which rules out the tempting shortcut of reusing the platform's
+digits and re-laying them out.
+
+### Why this is provable rather than merely tested
+
+6.1.6.1.20 defines the result rather than an algorithm: the shortest digit
+string that identifies the double, the closest one when several are equally
+short, and the even one on a tie. Two properties therefore *are* the
+specification, and both are checked over random doubles, every power of two,
+the subnormal range and short decimals:
+
+- **round trip** — parsing the output returns the same double, bit for bit;
+- **shortest** — no decimal with fewer significant digits does.
+
+That is a stronger position than the regular expression side, where the
+specification's semantics can only be checked against an interpreter. It also
+makes the implementation replaceable: the tests hold any algorithm to the
+specification, not to the current one.
+
+They do not cover everything. Ties satisfy both properties either way, so
+`exactTiesTakeTheEvenSignificand` and the differential fixture carry that rule
+— rounding ties down instead of to even costs 48 values in 231,948, and neither
+property notices.
+
+### Current implementation
+
+The exact rational method of Steele & White, as presented by Burger & Dybvig:
+big integers, no lookup tables, every step checkable by reading it. Correctness
+first — it is **63x** slower than `java.lang.Double.toString` for values at the
+extremes of the exponent range and **6.8x** slower for everyday ones
+(`./gradlew bench`). A table-driven method (Ryu, Schubfach) would close that,
+and the property tests above are what make swapping it in safe.
 
 ## Match safety (ReDoS)
 
