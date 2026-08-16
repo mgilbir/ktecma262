@@ -163,8 +163,16 @@ synchronisation.
 ## Numbers
 
 `Number::toString` — ECMA-262 6.1.6.1.20 — is what JavaScript prints for a
-number, and no Kotlin target reproduces it. Kotlin/JS does, because it *is*
-JavaScript; Kotlin/JVM and Kotlin/Native both disagree:
+number.
+
+**These functions return the same string on every target.** That is the point
+of them, and it is enforced rather than hoped: the tests live in `commonTest`,
+so every target runs them, and each differential fixture is a *single* hash
+compared everywhere. A target that printed something different would fail its
+own build.
+
+What differs is Kotlin's own `Double.toString()`, which is why this exists. On
+JVM and Native:
 
 ```kotlin
 import io.github.mgilbir.ecma262.number.toEcmaString
@@ -176,6 +184,10 @@ import io.github.mgilbir.ecma262.number.toEcmaString
 (-0.0).toEcmaString()    // "0"          — "-0.0"
 Double.MIN_VALUE.toEcmaString()  // "5e-324" — "4.9E-324"
 ```
+
+Kotlin/JS happens to agree, because a `Double` there is a JavaScript number —
+but reaching for the platform would make the answer depend on where the code
+runs, which is the problem rather than the solution.
 
 Over 200,000 random doubles, the JVM's string differs from JavaScript's **98.4%**
 of the time. Almost all of that is layout: JavaScript stays positional out to

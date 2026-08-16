@@ -7,10 +7,14 @@ import kotlin.math.log10
  * `Number::toString(x, 10)` — ECMA-262 6.1.6.1.20.
  *
  * This is what JavaScript prints for a number: `String(x)`, string
- * interpolation, and the numbers `JSON.stringify` emits. It is not what any
- * Kotlin target produces. Kotlin/JS happens to match because it *is* JavaScript,
- * but Kotlin/JVM and Kotlin/Native both print `1.0`, `1.0E21` and `4.9E-324`
- * where JavaScript prints `1`, `1e+21` and `5e-324`.
+ * interpolation, and the numbers `JSON.stringify` emits.
+ *
+ * This function returns the same string on every target. What differs is
+ * Kotlin's own `Double.toString()`, which is why this exists: on JVM and Native
+ * it prints `1.0`, `1.0E21` and `4.9E-324` where JavaScript prints `1`, `1e+21`
+ * and `5e-324`. On Kotlin/JS it happens to agree, because there a `Double` is a
+ * JavaScript number — but relying on that would make the answer depend on where
+ * the code runs, which is the problem rather than the solution.
  *
  * The specification defines the result rather than an algorithm: pick integers
  * n, k and s where 10^(k-1) <= s < 10^k and s * 10^(n-k) is exactly this
