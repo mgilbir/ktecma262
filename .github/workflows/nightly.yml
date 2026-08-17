@@ -147,32 +147,31 @@ jobs:
 
       - name: Fail if the committed tables are stale
         run: |
-          if ! git diff --exit-code --stat -- \
+          set -euo pipefail
+          if ! ./.github/scripts/check-regenerated.sh \
               src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt; then
-            echo "::error::Regenerating from upstream produced different tables."
             echo "Upstream Unicode data has changed. Regenerate and re-verify:"
             echo "  see the Unicode section of README.md"
             exit 1
           fi
-          echo "Tables match a fresh generation from upstream."
 
       - name: Check the normalisation tables are current
         # Same spirit as the table check above: regenerate from the UCD and fail
         # if upstream moved. Normalisation data changes rarely, and when it does
         # the fixture has to be regenerated with it.
+        #
+        # The comparison ignores the line recording which engine generated the
+        # file. That line moves with every node patch release and says nothing
+        # about the data, which is how this check failed on its first run.
         run: |
           set -euo pipefail
           node tools/genunicode/gen-normalization.mjs "$RUNNER_TEMP/ucd" \
             src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/NormalizationTables.kt 17.0.0
           node tools/genunicode/gen-normalization-fixture.mjs "$RUNNER_TEMP/ucd" \
             src/commonTest/kotlin/io/github/mgilbir/ecma262/text/NormalizationFixture.kt 17.0.0
-          if ! git diff --exit-code --stat -- \
-              src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/NormalizationTables.kt \
-              src/commonTest/kotlin/io/github/mgilbir/ecma262/text/NormalizationFixture.kt; then
-            echo "::error::Regenerating normalisation data from upstream produced different files."
-            exit 1
-          fi
-          echo "Normalisation tables and conformance fixture match upstream."
+          ./.github/scripts/check-regenerated.sh \
+            src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/NormalizationTables.kt \
+            src/commonTest/kotlin/io/github/mgilbir/ecma262/text/NormalizationFixture.kt
 
       - name: Check the Test262 number fixture is current
         # Regenerates from tc39/test262 and fails if upstream has changed. Like
@@ -182,13 +181,12 @@ jobs:
           node tools/test262/gen-number-fixture.mjs \
             src/commonTest/kotlin/io/github/mgilbir/ecma262/number/Test262NumberFixture.kt \
             "$RUNNER_TEMP/test262-cache"
-          if ! git diff --exit-code --stat -- \
+          if ! ./.github/scripts/check-regenerated.sh \
               src/commonTest/kotlin/io/github/mgilbir/ecma262/number/Test262NumberFixture.kt; then
-            echo "::error::Test262's Number tests have changed upstream."
+            echo "Test262's Number tests have changed upstream."
             echo "Regenerate the fixture and check the new cases still pass."
             exit 1
           fi
-          echo "The Test262 number fixture matches upstream."
 
       - name: Verify every property against node
         # Independent of the diff above: this checks the tables against the
