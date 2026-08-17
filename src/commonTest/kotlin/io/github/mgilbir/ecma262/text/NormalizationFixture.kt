@@ -6,12 +6,17 @@
 // produced - and generation fails if node disagrees with any of them. The
 // hashes cover every code point individually, which the conformance file does
 // not claim to.
+//
+// The oracle is recorded by its *Unicode* version, not its release version.
+// What determines these hashes is the Unicode data node carries, and a node
+// patch bump that changes nothing else would otherwise make the nightly drift
+// check fail for no reason - which is how it failed the first night it ran.
 
 package io.github.mgilbir.ecma262.text
 
 internal object NormalizationFixture {
     internal const val UNICODE_VERSION: String = "17.0.0"
-    internal const val ORACLE: String = "node v26.5.0"
+    internal const val ORACLE: String = "node (Unicode 17.0)"
 
     /** Rows of source, NFC, NFD, NFKC, NFKD. */
     internal const val ROW_COUNT: Int = 20034
