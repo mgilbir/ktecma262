@@ -88,9 +88,13 @@ publishing {
         artifact(javadocJar)
         pom {
             name.set("ktecma262")
+            // This is what shows on Maven Central and on klibs.io, so it has
+            // to describe the whole library rather than the part it started as.
             description.set(
-                "An ECMA-262 (JavaScript) regular expression engine in pure Kotlin, " +
-                    "for Kotlin Multiplatform.",
+                "ECMA-262 (JavaScript) algorithms in pure Kotlin, for Kotlin " +
+                    "Multiplatform: a regular expression engine, number formatting " +
+                    "and parsing, URI escaping, Unicode normalisation and identifier " +
+                    "validation.",
             )
             url.set("https://github.com/mgilbir/ktecma262")
             licenses {
