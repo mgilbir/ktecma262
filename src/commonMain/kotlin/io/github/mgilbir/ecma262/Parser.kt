@@ -1040,6 +1040,11 @@ internal class Parser(
             'q' -> parseStringDisjunction(backslash)
             'b' -> { advance(); ClassSetLiteral(0x08) } // backspace, as in `u` mode
 
+            // `\cX` is a control escape here exactly as it is in a `u` class:
+            // an ASCII letter is required, and there is no Annex B fallback, so
+            // `[\c1]` and `[\c]` stay SyntaxErrors under `v`.
+            'c' -> ClassSetLiteral(parseControlEscape(backslash, inClass = true))
+
             // `\0` is the NUL escape when no digit follows; any other digit
             // escape is invalid, since a class holds no backreferences.
             in '0'..'9' -> {

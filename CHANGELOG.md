@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `\cX` inside a character class was rejected under the `v` flag. The
+  class-set path had no branch for it at all, so `[\cf_]` was a SyntaxError
+  while every engine accepts it and matches U+0006. `u` and Annex B classes
+  were unaffected, as was `\cX` outside a class.
+
+  Found by the nightly fuzzer on `/=XwXd[\cf_]bX/vi`, one case in 500,000.
+
+  This is the second bug of exactly this shape - `\0` was the first, in 0.1.1 -
+  so rather than fix it and move on, the two class paths were compared branch by
+  branch. They now handle the same escapes, `v` additionally handling `\q`,
+  which is the only one that belongs to it alone. The recorded corpus covers
+  control escapes inside classes in all three modes.
+
 ## 0.2.0
 
 The library stops being only a regular expression engine.

@@ -69,6 +69,33 @@ class ControlEscapeTest {
         assertEquals(listOf(0 to "\u0011"), matches("[\\c1]", "g", "\u0011"))
     }
 
+    /**
+     * A valid `\cX` works inside a class in every mode, including `v`.
+     *
+     * The `v` class-set path had no `c` branch at all, so `[\cf_]` was rejected
+     * as an invalid escape while node accepted it. That is the second bug of
+     * this exact shape - `\0` was the first, in 0.1.1 - so the two class paths
+     * are now checked against each other rather than only against examples.
+     */
+    @Test
+    fun controlEscapesWorkInsideClassesInEveryMode() {
+        for (flags in listOf("", "u", "v", "iu", "iv")) {
+            assertEquals(
+                listOf(0 to "\u0006"),
+                matches("[\\cf_]", flags + "g", "\u0006"),
+                "[\\cf_] must match U+0006 under /$flags",
+            )
+            assertEquals(
+                listOf(0 to "_"),
+                matches("[\\cf_]", flags + "g", "_"),
+                "[\\cf_] must still match _ under /$flags",
+            )
+            assertEquals(listOf(0 to "\u0001"), matches("[\\cA]", flags + "g", "\u0001"))
+        }
+        // The whole failing case from the fuzzer, kept as it was generated.
+        assertEquals(listOf("."), RegExp.compile("=XwXd[\\cf_]bX", "vi").split(".", 5))
+    }
+
     /** Unicode mode has no Annex B fallback: an invalid `\c` is a SyntaxError. */
     @Test
     fun unicodeModeRejectsInvalidControlEscapes() {

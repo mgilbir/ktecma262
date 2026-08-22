@@ -165,6 +165,9 @@ export const PATTERNS = [
   // quantifier binds to the `c` and a class range can open on it
   "\\c", "\\c*", "a\\c*", "\\c{2}", "\\cA", "\\cz", "\\c1", "\\c-",
   "[\\c]", "[\\c-z]", "[\\c1]", "a\\c*{?",
+  // Control escapes inside a class, which the v-mode class-set path did not
+  // handle at all: valid ones, and the two shapes that stay SyntaxErrors there.
+  "[\cf_]", "[\cA]", "[\cf-\cz]", "[a\cfb]", "[^\cf]", "[\cf\cg]",
 
   // shorthand classes
   "\\d+", "\\D+", "\\w+", "\\W+", "\\s+", "\\S+", "\\d\\w\\s",
