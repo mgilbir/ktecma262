@@ -1,27 +1,53 @@
 package io.github.mgilbir.ecma262.text
 
 /**
- * `WhiteSpace` and `LineTerminator` from ECMA-262's lexical grammar.
+ * `WhiteSpace` - ECMA-262 12.2.
  *
- * Shared, because two separate parts of the specification are defined in terms
- * of it - trimming, and the whitespace a numeric literal may be padded with -
- * and letting them drift apart would be a bug that only shows up in one of
- * them.
+ * TAB, VT, FF, ZWNBSP and every Space_Separator: 21 characters. **Line
+ * terminators are not among them** - those are a separate production, and
+ * [isEcmaLineTerminator] answers for those.
  *
- * It is not `Char.isWhitespace()`, which differs in both directions: it strips
- * U+001C to U+001F, the file and record separators, which JavaScript keeps, and
- * it leaves U+FEFF, which JavaScript strips. Five characters, all invisible.
+ * The two are kept apart because a tokenizer has to tell them apart rather than
+ * merely skip both. A line terminator may not appear in the body of a regular
+ * expression literal, and it ends a single-line comment; whitespace does
+ * neither. Code that wants both, as trimming does, can ask for both.
  *
- * Written as escapes: several of these are invisible, and U+FEFF is a byte
- * order mark that tooling likes to eat. All are in the BMP.
+ * This is not `Char.isWhitespace()`, which differs in both directions: it
+ * accepts U+001C to U+001F, the file and record separators, which JavaScript
+ * does not, and it rejects U+FEFF, which JavaScript accepts.
+ *
+ * Written as escapes: all of these are invisible, and U+FEFF is a byte order
+ * mark that tooling likes to eat. All are in the BMP.
  */
-internal fun isEcmaWhiteSpace(c: Char): Boolean = when (c) {
-    '\u0009', '\u000B', '\u000C', '\u0020', '\u00A0', '\uFEFF' -> true // WhiteSpace
-    '\u000A', '\u000D', '\u2028', '\u2029' -> true // LineTerminator
-    '\u1680', '\u202F', '\u205F', '\u3000' -> true // remaining Space_Separator
+public fun isEcmaWhiteSpace(c: Char): Boolean = when (c) {
+    '\u0009', '\u000B', '\u000C', '\uFEFF' -> true
+    // <USP>, the Space_Separator category.
+    '\u0020', '\u00A0', '\u1680', '\u202F', '\u205F', '\u3000' -> true
     in '\u2000'..'\u200A' -> true
     else -> false
 }
+
+/**
+ * `LineTerminator` - ECMA-262 12.3: LF, CR, LS and PS. Four characters, and
+ * disjoint from [isEcmaWhiteSpace].
+ *
+ * Worth having separately because several rules turn on it alone. One may not
+ * appear in the body of a regular expression literal, which is what stops an
+ * unterminated `/…/` swallowing the rest of a file; one ends a single-line
+ * comment; and automatic semicolon insertion is defined in terms of it.
+ *
+ * Note that U+0085 NEXT LINE is *not* one, however much it looks like it.
+ */
+public fun isEcmaLineTerminator(c: Char): Boolean =
+    c == '\u000A' || c == '\u000D' || c == '\u2028' || c == '\u2029'
+
+/**
+ * The union, which is what trimming and a numeric literal's padding both use.
+ *
+ * Kept in one place so those two cannot drift apart, and so the split above
+ * cannot silently narrow either of them.
+ */
+internal fun isEcmaTrimmable(c: Char): Boolean = isEcmaWhiteSpace(c) || isEcmaLineTerminator(c)
 
 /**
  * `String.prototype.trim` - ECMA-262 22.1.3.32.
@@ -42,21 +68,21 @@ internal fun isEcmaWhiteSpace(c: Char): Boolean = when (c) {
 public fun String.ecmaTrim(): String {
     var start = 0
     var end = length
-    while (start < end && isEcmaWhiteSpace(this[start])) start++
-    while (end > start && isEcmaWhiteSpace(this[end - 1])) end--
+    while (start < end && isEcmaTrimmable(this[start])) start++
+    while (end > start && isEcmaTrimmable(this[end - 1])) end--
     return if (start == 0 && end == length) this else substring(start, end)
 }
 
 /** `String.prototype.trimStart` - ECMA-262 22.1.3.34. See [ecmaTrim]. */
 public fun String.ecmaTrimStart(): String {
     var start = 0
-    while (start < length && isEcmaWhiteSpace(this[start])) start++
+    while (start < length && isEcmaTrimmable(this[start])) start++
     return if (start == 0) this else substring(start)
 }
 
 /** `String.prototype.trimEnd` - ECMA-262 22.1.3.33. See [ecmaTrim]. */
 public fun String.ecmaTrimEnd(): String {
     var end = length
-    while (end > 0 && isEcmaWhiteSpace(this[end - 1])) end--
+    while (end > 0 && isEcmaTrimmable(this[end - 1])) end--
     return if (end == length) this else substring(0, end)
 }

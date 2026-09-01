@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- `isEcmaWhiteSpace(Char)` and `isEcmaLineTerminator(Char)` are public, in
+  `io.github.mgilbir.ecma262.text`. The first was internal and the second did
+  not exist, so a consumer lexing a JavaScript subset was hand-copying a table
+  this library already holds (#5).
+
+  They are kept as the two **disjoint** productions the grammar defines rather
+  than one predicate for both. A tokenizer has to tell them apart: a line
+  terminator may not appear in a regular expression literal's body, and it ends
+  a single-line comment, where whitespace does neither. Trimming and the numeric
+  literal parser use the union, which now lives in one place so those two cannot
+  drift apart.
+
+  Both sets are checked over the whole BMP - 21 and 4 characters, disjoint, and
+  together exactly what `trim` removes. The sets came from asking node rather
+  than reading the table: a line terminator ends a single-line comment, and
+  whitespace separates tokens in a declaration. The declaration form matters, as
+  an arithmetic probe reports `-` as whitespace, `1 - + - 1` being 2.
+
 ### Fixed
 
 - `\cX` inside a character class was rejected under the `v` flag. The

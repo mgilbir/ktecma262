@@ -125,6 +125,7 @@ gets differently:
 - `String.ecmaTrim()`, `ecmaTrimStart()`, `ecmaTrimEnd()`
 - `EcmaMath.round/trunc/sign/clz32/imul/fround`
 - `String.isEcmaIdentifierName()`, `isEcmaIdentifier()`, `isEcmaReservedWord()`
+- `isEcmaWhiteSpace(Char)`, `isEcmaLineTerminator(Char)` — the two lexical productions
 
 ## API
 

@@ -1,6 +1,6 @@
 package io.github.mgilbir.ecma262.number
 
-import io.github.mgilbir.ecma262.text.isEcmaWhiteSpace
+import io.github.mgilbir.ecma262.text.isEcmaTrimmable
 
 /**
  * `StringToNumber` — ECMA-262 7.1.4.1.1, the conversion `Number("…")` performs.
@@ -36,8 +36,8 @@ import io.github.mgilbir.ecma262.text.isEcmaWhiteSpace
 public fun String.toEcmaDouble(): Double {
     var start = 0
     var end = length
-    while (start < end && isEcmaWhiteSpace(this[start])) start++
-    while (end > start && isEcmaWhiteSpace(this[end - 1])) end--
+    while (start < end && isEcmaTrimmable(this[start])) start++
+    while (end > start && isEcmaTrimmable(this[end - 1])) end--
 
     // StringNumericLiteral ::: StrWhiteSpace_opt — an empty literal is +0.
     if (start == end) return 0.0
