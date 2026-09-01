@@ -38,8 +38,39 @@ class NewYorkZoneTest {
         }
     }
 
+    /**
+     * The assumption this whole file rests on, checked first and separately.
+     *
+     * The expectations below came from node's copy of tzdata. This runs against
+     * the JDK's, on three operating systems. Those have never disagreed about
+     * New York in 2024 - it is settled history, not a pending rule - but if one
+     * ever did, the parse assertions would fail in a way that reads like a
+     * defect in [parseDateTimeString]. So the zone database is checked on its
+     * own terms first, and says so.
+     */
+    private fun assumeNewYorkRules() {
+        val rules = ZoneId.of("America/New_York").rules
+        fun offsetAt(instant: String): Int =
+            rules.getOffset(java.time.Instant.parse(instant)).totalSeconds / 60
+        val complaint = "the JDK's tzdata disagrees with node's about America/New_York in 2024, " +
+            "which is a time zone database difference rather than a defect in this library"
+        assertEquals(-300, offsetAt("2024-01-15T12:00:00Z"), complaint)
+        assertEquals(-240, offsetAt("2024-07-15T12:00:00Z"), complaint)
+        // The 2024 transitions, as instants: 07:00Z in March and 06:00Z in November.
+        assertEquals(-300, offsetAt("2024-03-10T06:59:59Z"), complaint)
+        assertEquals(-240, offsetAt("2024-03-10T07:00:00Z"), complaint)
+        assertEquals(-240, offsetAt("2024-11-03T05:59:59Z"), complaint)
+        assertEquals(-300, offsetAt("2024-11-03T06:00:00Z"), complaint)
+    }
+
+    @Test
+    fun theJdkAgreesWithNodeAboutNewYorkIn2024() {
+        assumeNewYorkRules()
+    }
+
     @Test
     fun matchesNodeAcrossBothTransitions() {
+        assumeNewYorkRules()
         val inputs = DateFixture.NEW_YORK_INPUT
         val expected = DateFixture.NEW_YORK_EXPECTED
         assertEquals(inputs.size, expected.size)
@@ -58,6 +89,7 @@ class NewYorkZoneTest {
      */
     @Test
     fun gapAndOverlapUseThePreTransitionOffset() {
+        assumeNewYorkRules()
         // 02:30 on 10 March does not exist: the clocks go 01:59:59 EST to 03:00 EDT.
         // Resolved at EST, -05:00, it is 07:30 UTC. Resolved at EDT it would be 06:30.
         assertEquals(
@@ -74,6 +106,7 @@ class NewYorkZoneTest {
     /** The example in README.md, run rather than asserted on paper. */
     @Test
     fun readmeExample() {
+        assumeNewYorkRules()
         assertEquals(
             parseDateTimeString("2024-07-01T16:00:00Z"),
             parseDateTimeString("2024-07-01T12:00:00", newYork),
@@ -83,6 +116,7 @@ class NewYorkZoneTest {
     /** Ordinary days still differ by season, which is the whole reason the parameter is a function. */
     @Test
     fun theOffsetDependsOnTheDate() {
+        assumeNewYorkRules()
         assertEquals(-300, newYork.offsetMinutesAtLocalTime(parseDateTimeString("2024-01-15T12:00:00")))
         assertEquals(-240, newYork.offsetMinutesAtLocalTime(parseDateTimeString("2024-07-15T12:00:00")))
         assertTrue(
