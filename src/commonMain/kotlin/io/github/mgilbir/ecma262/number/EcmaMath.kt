@@ -58,13 +58,13 @@ public object EcmaMath {
      * `Math.clz32` — ECMA-262 21.3.2.11: leading zeros of the value as a 32-bit
      * unsigned integer, so `clz32(0)` is 32 and `clz32(-1)` is 0.
      */
-    public fun clz32(x: Double): Int = toUint32(x).countLeadingZeroBits()
+    public fun clz32(x: Double): Int = x.toEcmaUint32().countLeadingZeroBits()
 
     /**
      * `Math.imul` — ECMA-262 21.3.2.19: the two arguments as 32-bit signed
      * integers, multiplied with wraparound.
      */
-    public fun imul(a: Double, b: Double): Int = toInt32(a) * toInt32(b)
+    public fun imul(a: Double, b: Double): Int = a.toEcmaInt32() * b.toEcmaInt32()
 
     /**
      * `Math.fround` — ECMA-262 21.3.2.17: the nearest value representable as a
@@ -97,13 +97,4 @@ public object EcmaMath {
     /** The largest value a 32-bit float can hold, 2^128 - 2^104. */
     private const val MAX_FLOAT: Double = 3.4028234663852886e38
 
-    /** `ToUint32` — ECMA-262 7.1.7. */
-    private fun toUint32(x: Double): UInt {
-        if (x.isNaN() || x.isInfinite() || x == 0.0) return 0u
-        // mod rather than %: the specification wants a non-negative remainder.
-        return trunc(x).mod(4294967296.0).toLong().toUInt()
-    }
-
-    /** `ToInt32` — ECMA-262 7.1.6, which is ToUint32 reinterpreted as signed. */
-    private fun toInt32(x: Double): Int = toUint32(x).toInt()
 }

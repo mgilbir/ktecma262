@@ -4,6 +4,31 @@
 
 ### Added
 
+- `scanRegExpLiteral(text, from)` in `io.github.mgilbir.ecma262.lexer` - finds
+  where a regular expression literal ends (#6). Not a search for the next `/`:
+  a backslash escapes what follows, a `/` inside `[...]` is an ordinary
+  character, and a line terminator may not appear in the body at all, which is
+  what stops an unterminated literal swallowing the rest of a file. An empty
+  body or a leading star is a comment rather than a literal.
+
+  It deliberately does not decide whether a `/` starts a literal - that depends
+  on the preceding token, so it belongs to the host grammar - and it does not
+  validate flags, which `RegExp.compile` already reports properly.
+
+- `decodeEscapeSequence(source, backslashAt)` in the same package - one
+  `EscapeSequence` or `LineContinuation`, offset in and offset out (#8). The
+  three rules worth having a table for: a zero escape is NUL only when no digit
+  follows, a braced unicode escape may need a surrogate pair, and a line
+  continuation consumes CR LF as one break and produces nothing. Legacy octal is
+  rejected rather than guessed at, matching strict mode.
+
+- `Double.toEcmaInt32()` and `toEcmaUint32()` - `ToInt32` and `ToUint32`,
+  ECMA-262 7.1.6 and 7.1.7 (#9). These were already implemented privately for
+  `clz32` and `imul`; they are what every bitwise operator coerces its operands
+  with, so a consumer implementing `&`, `|`, `^`, `<<`, `>>` or `>>>` needs them
+  first. Not a cast: NaN and the infinities become zero, the value truncates
+  toward zero, and the rest wraps modulo 2^32.
+
 - `isEcmaWhiteSpace(Char)` and `isEcmaLineTerminator(Char)` are public, in
   `io.github.mgilbir.ecma262.text`. The first was internal and the second did
   not exist, so a consumer lexing a JavaScript subset was hand-copying a table

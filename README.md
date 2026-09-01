@@ -127,6 +127,13 @@ gets differently:
 - `String.isEcmaIdentifierName()`, `isEcmaIdentifier()`, `isEcmaReservedWord()`
 - `isEcmaWhiteSpace(Char)`, `isEcmaLineTerminator(Char)` — the two lexical productions
 
+**Lexing** — the pieces a JavaScript-subset tokenizer needs:
+
+- `scanRegExpLiteral(text, from)` — finds where a `/…/flags` literal ends
+- `decodeEscapeSequence(source, backslashAt)` — one string escape, or a line continuation
+- `Double.toEcmaInt32()`, `toEcmaUint32()` — the coercions behind the bitwise operators
+
+
 ## API
 
 `RegExp` mirrors JavaScript's:
