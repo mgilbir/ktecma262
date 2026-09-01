@@ -118,6 +118,41 @@ jobs:
           -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
           -Pseed=${{ matrix.seed }}${{ github.run_number }}
 
+  date-fuzz:
+    # The Date Time String Format is a parser, so its input space is text and a
+    # fixed corpus can only ever sample it. Node is the oracle for strings the
+    # grammar admits; outside it, node is free to use its own parser and does,
+    # so there the requirement is only that the library returns NaN.
+    name: Date fuzz against node (seed ${{ matrix.seed }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [1, 2, 3]
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Fuzz
+        run: >
+          ./gradlew dateFuzz
+          -Pcount=${{ github.event.inputs.fuzz_count || '500000' }}
+          -Pseed=${{ matrix.seed }}${{ github.run_number }}
+
   unicode-drift:
     # Regenerates the tables from upstream and fails if they differ from the
     # committed ones. A failure here usually means Unicode published new data

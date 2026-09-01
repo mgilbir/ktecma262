@@ -1,5 +1,11 @@
 package io.github.mgilbir.ecma262
 
+import io.github.mgilbir.ecma262.date.EcmaTimeZone
+import io.github.mgilbir.ecma262.date.makeDay
+import io.github.mgilbir.ecma262.date.makeFullYear
+import io.github.mgilbir.ecma262.date.makeTime
+import io.github.mgilbir.ecma262.date.parseDateTimeString
+import io.github.mgilbir.ecma262.date.timeClip
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -13,6 +19,33 @@ import kotlin.test.assertTrue
  * two from drifting apart.
  */
 class ReadmeExamplesTest {
+
+    @Test
+    fun dates() {
+        // Month is zero based, day of month is one based, and every field rolls.
+        assertEquals(makeDay(2013.0, 0.0, 1.0), makeDay(2012.0, 12.0, 1.0))
+        assertEquals(makeDay(2012.0, 2.0, 1.0), makeDay(2012.0, 1.0, 30.0))
+        assertEquals(makeDay(2023.0, 11.0, 31.0), makeDay(2024.0, 0.0, 0.0))
+        assertEquals(86400000.0, makeTime(24.0, 0.0, 0.0, 0.0))
+
+        // Two-digit years are the twentieth century, and the rule stops dead at 99.
+        assertEquals(1999.0, makeFullYear(99.0))
+        assertEquals(100.0, makeFullYear(100.0))
+
+        // Out of range is an Invalid Date, not an error.
+        assertEquals(8.64e15, timeClip(8.64e15))
+        assertTrue(timeClip(8.64e15 + 1.0).isNaN())
+
+        // A date-only string is UTC in every zone; a bare date-time string is local.
+        val utcMidnight = parseDateTimeString("2024-07-01T00:00:00Z")
+        assertEquals(utcMidnight, parseDateTimeString("2024-07-01"))
+        assertEquals(utcMidnight, parseDateTimeString("2024-07-01", EcmaTimeZone.fixed(330)))
+        assertEquals(utcMidnight, parseDateTimeString("2024-07-01T00:00:00"))
+        assertEquals(
+            utcMidnight - 330 * 60000.0,
+            parseDateTimeString("2024-07-01T00:00:00", EcmaTimeZone.fixed(330)),
+        )
+    }
 
     @Test
     fun quickStart() {

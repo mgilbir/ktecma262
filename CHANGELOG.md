@@ -4,6 +4,37 @@
 
 ### Added
 
+- ECMA-262 21.4 time value arithmetic, in `io.github.mgilbir.ecma262.date`
+  (#7). `makeDay`, `makeTime`, `makeDate`, `timeClip` and `makeFullYear` are the
+  specification's own decomposition, kept as separate steps because the rolling
+  rule is where aggregate arithmetic goes wrong: month 12 is the thirteenth
+  month, day 0 is the day before the first, hour 24 is the next midnight, and
+  nothing is clipped until `timeClip`, which is what lets the rolling work.
+  `makeFullYear` is the two-digit rule, where 99 means 1999 and 100 means 100.
+
+- `parseDateTimeString(text, zone)` - the Date Time String Format, 21.4.1.32.
+  Its one asymmetry decides which day a value lands in: a date-only string is
+  UTC, a date-time string with no offset is local time.
+
+- `EcmaTimeZone`, the seam that keeps a time zone database out of this library.
+  It is consulted for exactly one case - a date-time string with no offset - and
+  it takes a *time value* carrying the wall clock rather than an offset, because
+  the offset depends on the date and the instant is what the caller is trying to
+  compute. That is the specification's `LocalTZA(t, isUTC = false)`, and it is
+  `java.time`'s `ZoneRules.getOffset(LocalDateTime)` one for one, so a JVM
+  implementation is a three-line delegation. The spring-forward gap and the
+  autumn overlap both resolve with the pre-transition offset, as JavaScript
+  does; a JVM test pins that against node across both 2024 transitions.
+
+  Anything outside the grammar returns NaN. `Date.parse` may fall back to an
+  implementation-specific parser and V8 reads `March 1, 2024`, `2024/03/01`, a
+  lowercase `z` and four fractional digits; none of that is portable, and
+  guessing at it would agree with one engine and disagree with the next.
+
+  Fourteen planted bugs are caught, and a fifteenth exposed a gap in the fuzzer
+  rather than in the library: the generator could not produce `24:30`, so a
+  missing end-of-day check survived it. The generator now reaches that case.
+
 - `scanRegExpLiteral(text, from)` in `io.github.mgilbir.ecma262.lexer` - finds
   where a regular expression literal ends (#6). Not a search for the next `/`:
   a backslash escapes what follows, a `/` inside `[...]` is an ordinary

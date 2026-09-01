@@ -133,6 +133,12 @@ gets differently:
 - `decodeEscapeSequence(source, backslashAt)` — one string escape, or a line continuation
 - `Double.toEcmaInt32()`, `toEcmaUint32()` — the coercions behind the bitwise operators
 
+**Dates** — §21.4's time value arithmetic, without a time zone database:
+
+- `makeDay`, `makeTime`, `makeDate`, `timeClip`, `makeFullYear`
+- `parseDateTimeString(text, zone)` — the Date Time String Format
+- `EcmaTimeZone` — the one place a zone is needed, supplied by you
+
 
 ## API
 
@@ -360,6 +366,89 @@ Verified two ways: every code point against the composed rule from 12.7, and a
 sample against what node's parser actually accepts, since only the second is
 the real question and only the first can be exhaustive.
 
+## Dates
+
+JavaScript's `Date` is a specific calendar rather than a correct one, and the
+specifics are the reason this is here. A port built on a well-behaved date
+library disagrees quietly about all of the following:
+
+```kotlin
+// Month is zero based, day of month is one based, and every field rolls.
+makeDay(2012.0, 12.0, 1.0)   // January 2013 — month 12 is the thirteenth month
+makeDay(2012.0, 1.0, 30.0)   // 1 March 2012 — February had 29 days that year
+makeDay(2024.0, 0.0, 0.0)    // 31 December 2023 — day 0 is the day before the 1st
+makeTime(24.0, 0.0, 0.0, 0.0)  // 86400000.0 — the next midnight
+
+// Two-digit years are the twentieth century, and the rule stops dead at 99.
+makeFullYear(99.0)   // 1999.0
+makeFullYear(100.0)  // 100.0
+
+// Out of range is an Invalid Date, not an error.
+timeClip(8.64e15)        // 8.64e15 — the last representable instant
+timeClip(8.64e15 + 1.0)  // NaN
+```
+
+Nothing is clipped until `timeClip`, which is what lets the rolling work.
+
+### Time zones stay yours
+
+`parseDateTimeString` implements the format from §21.4.1.32, which has one
+asymmetry that decides which day — and at the extremes which month — a value
+lands in:
+
+```kotlin
+parseDateTimeString("2024-07-01")           // midnight UTC, in every zone
+parseDateTimeString("2024-07-01T00:00:00")  // midnight local
+```
+
+A date-only string is UTC by definition. A date-time string with no offset is
+local time. So exactly one case needs a zone, and that is the only thing
+`EcmaTimeZone` is asked about — an explicit `Z` or `+05:30` answers for itself,
+and the other four operations are pure UTC arithmetic.
+
+The library carries no time zone database and never will. `EcmaTimeZone` is the
+seam; on the JVM it is a delegation, because `java.time` asks and answers
+exactly the same question:
+
+```kotlin
+val rules = ZoneId.of("America/New_York").rules
+val zone = EcmaTimeZone { localTimeValue ->
+    val seconds = floor(localTimeValue / 1000.0).toLong()
+    rules.getOffset(LocalDateTime.ofEpochSecond(seconds, 0, ZoneOffset.UTC)).totalSeconds / 60
+}
+parseDateTimeString("2024-07-01T12:00:00", zone)  // 16:00Z — EDT, not EST
+```
+
+The argument is a *time value*, not an offset: it carries the year, month, day
+and clock reading that were written down, encoded as though they were UTC. It
+has to be that way round, because the real instant is what the caller is trying
+to compute and computing it needs the offset. That is the specification's own
+`LocalTZA(t, isUTC = false)`, and it is why a plain `Int` would be wrong —
+New York is −300 in January and −240 in July.
+
+It also means the two hard days a year are handled. A local time in a
+spring-forward gap never happens, and one in an autumn overlap happens twice;
+JavaScript resolves both with the offset in force *before* the transition, and
+`ZoneRules.getOffset(LocalDateTime)` already agrees. A JVM test pins that
+against node across both 2024 transitions.
+
+`zone` defaults to UTC, which is what an engine does under `TZ=UTC`.
+
+### What is deliberately not accepted
+
+`Date.parse` may fall back to "an implementation-specific format" for anything
+outside the grammar, and V8 uses that licence freely — it reads `March 1, 2024`,
+`2024/03/01`, `2024-3-01`, a space instead of the `T`, a lowercase `z`, `+0530`
+without the colon, and one, two or four fractional digits. None of that is
+specified or portable between engines, so `parseDateTimeString` returns `NaN`
+for all of it. The failure that leaves is loud — a missing date rather than a
+wrong one.
+
+The same asymmetry shapes the tests: node is the oracle for strings inside the
+grammar, and cannot be asked about strings outside it, so the rejections are
+asserted from the grammar itself.
+
+
 ## Where Kotlin disagrees with JavaScript
 
 Two of these produce wrong answers rather than errors, on every target:
@@ -545,6 +634,15 @@ through the parser — and compares each against node. The parser is what needs
 it: its input space is text, and no recorded fixture covers the ways a string
 can almost be a numeric literal.
 
+Dates get it too, with one difference that shapes the whole harness.
+`./gradlew dateFuzz -Pcount=200000 -Pseed=7` compares against node, but node is
+only an oracle for strings *inside* the Date Time String Format — outside it,
+`Date.parse` is allowed to use an implementation-specific parser and V8 does.
+So the oracle decides membership from the grammar, written out separately in
+JavaScript: inside, node's value must match exactly; outside, the only
+requirement is `NaN`. The generator produces near misses rather than noise,
+because the failures that matter are one character from valid.
+
 ### Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request:
@@ -562,7 +660,8 @@ message if node's Unicode version does not match the compiled tables, because
 otherwise every `\p{…}` case would disagree for reasons unrelated to the engine.
 
 `.github/workflows/nightly.yml` runs the longer checks: 1.5M fuzz cases across
-three seeds, and a drift check that regenerates the Unicode tables from upstream
+three seeds for each of the engine, the numbers, the URI functions and the
+dates, and a drift check that regenerates the Unicode tables from upstream
 and re-verifies every property against node. The drift job is expected to fail
 when Unicode publishes new data — that is the signal to regenerate.
 
