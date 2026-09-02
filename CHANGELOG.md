@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+Everything a consumer needs to tokenize and to compute with dates, and the
+last of the issues filed against 0.2.0.
 
 ### Added
 

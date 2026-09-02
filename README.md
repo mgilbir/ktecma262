@@ -30,7 +30,7 @@ still see them.
 
 ```kotlin
 dependencies {
-    implementation("io.github.mgilbir:ktecma262:0.2.0")
+    implementation("io.github.mgilbir:ktecma262:0.3.0")
 }
 ```
 
@@ -793,22 +793,26 @@ Reproduce with `./gradlew bench`.
 ## Releasing
 
 Tagging is the trigger: `.github/workflows/release.yml` runs on a `v*` tag and
-does the whole release. It checks the tag against the version in
-`build.gradle.kts` and that the changelog has a section for it, builds and runs
-the full test suite plus 200,000 fuzz cases on Linux, then rebuilds every
-target on macOS, publishes, releases to Maven Central, and creates the GitHub
-release page with notes from `CHANGELOG.md` and the jars attached.
+does everything up to the last irreversible step. It checks the tag against the
+version in `build.gradle.kts` and that the changelog has a section for it,
+builds and runs the full test suite plus 200,000 fuzz cases on Linux, then
+rebuilds every target on macOS, uploads the deployment to Maven Central, and
+creates the GitHub release page with notes from `CHANGELOG.md` and the jars
+attached.
 
 Two things about that are deliberate. Publishing happens from **macOS** because
-it is the only host that can compile every target. And the Central deployment
-is released **automatically** — publishing a version is irreversible, and a
-tag is the point of no return, not a later button.
+it is the only host that can compile every target. And the deployment is
+uploaded as `USER_MANAGED`, so the Portal validates it and then **waits**:
+a version on Central can never be replaced, so releasing it stays a decision
+someone makes rather than a side effect of pushing a tag. The tag gets you a
+validated deployment and a GitHub release; the Central "Publish" button is
+still a separate, deliberate act.
 
 ```bash
 # 1. bump `version` in build.gradle.kts, commit
 # 2. tag and push
-git tag -a v0.2.0 -m "ktecma262 0.2.0"
-git push origin v0.2.0
+git tag -a v0.3.0 -m "ktecma262 0.3.0"
+git push origin v0.3.0
 ```
 
 Publication is skipped — with a notice, not a failure — unless these repository
