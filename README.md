@@ -659,6 +659,29 @@ only the fuzz job pins a node version. It is guarded: CI fails with a clear
 message if node's Unicode version does not match the compiled tables, because
 otherwise every `\p{…}` case would disagree for reasons unrelated to the engine.
 
+### Pull requests from forks
+
+No workflow uses `pull_request_target`. That is the trigger that leaks: it runs
+in the base repository's context, with its secrets, while checking out the pull
+request's code. `ci.yml` uses plain `pull_request`, which runs the fork's code
+without them.
+
+Nothing reachable from a pull request uses a secret at all. The publishing
+credentials are in `release.yml`, which only a `v*` tag or a manual dispatch can
+start, and neither is something a fork can do. The `GITHUB_TOKEN` that the
+Test262 fetches use is in `nightly.yml`, on `schedule` and `workflow_dispatch`
+only, and it is set on the single step that needs it rather than on the job, so
+no other step in that job can see it. This repository is public, so GitHub also
+withholds secrets from fork pull requests and issues a read-only token whatever
+the workflow asks for.
+
+Beyond that, workflows from **any** external contributor need manual approval
+before they run — the repository setting is `all_external_contributors`, not the
+`first_time_contributors` default, so a returning contributor does not get an
+automatic run either. All three workflows declare `permissions: contents: read`
+at the top level, and the only job that widens it is the one that creates the
+release page.
+
 `.github/workflows/nightly.yml` runs the longer checks: 1.5M fuzz cases across
 three seeds for each of the engine, the numbers, the URI functions and the
 dates, and a drift check that regenerates the Unicode tables from upstream
