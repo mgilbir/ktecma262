@@ -34,11 +34,55 @@ const DIRS = [
   "test/built-ins/Number/prototype/toString",
 ];
 
-const fetchText = async (url) => {
-  const res = await fetch(url, { headers: { "user-agent": "ktecma262-build" } });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
-  return res.text();
+// Authenticated when a token is in the environment, and it needs to be.
+//
+// api.github.com allows 60 requests an hour to *unauthenticated* callers, and
+// the limit is per source address rather than per caller. GitHub Actions
+// runners share addresses, so this can be refused for someone else's traffic:
+// the nightly of 2026-09-08 failed with a 403 on its very first call, having
+// made no others. A token raises the limit to 5000 an hour and makes it ours.
+//
+// Read from the environment, never from a file and never interpolated into a
+// command, so it cannot reach a log or the transcript. Absent, the request goes
+// out unauthenticated and works fine for a one-off local run.
+const gitHubHeaders = () => {
+  const headers = { "user-agent": "ktecma262-build" };
+  const token = process.env.GITHUB_TOKEN;
+  if (token) headers.authorization = `Bearer ${token}`;
+  return headers;
 };
+
+// A rate-limited refusal is indistinguishable from a real one unless you look,
+// and diagnosing it from `403` alone cost an hour. So say which it is.
+const describeRefusal = (res, url) => {
+  const remaining = res.headers.get("x-ratelimit-remaining");
+  if (res.status === 403 && remaining === "0") {
+    const reset = Number(res.headers.get("x-ratelimit-reset") || 0);
+    const limit = res.headers.get("x-ratelimit-limit");
+    const when = reset ? new Date(reset * 1000).toISOString() : "unknown";
+    const hint = process.env.GITHUB_TOKEN
+      ? "The request was authenticated, so this is genuine exhaustion rather than a shared address."
+      : "The request was unauthenticated (60/hour, shared across everything on this address). " +
+        "Set GITHUB_TOKEN to raise it to 5000/hour.";
+    return `GitHub API rate limit reached for ${url}\n  limit=${limit}, resets at ${when}\n  ${hint}`;
+  }
+  return `${res.status} ${res.statusText} for ${url}`;
+};
+
+async function fetchText(url) {
+  // A bounded retry, because a shared address can be busy for a moment. Bounded
+  // deliberately: an unbounded wait on a rate limit is an hour-long hang.
+  let lastProblem;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const res = await fetch(url, { headers: gitHubHeaders() });
+    if (res.ok) return res.text();
+    lastProblem = describeRefusal(res, url);
+    const retryable = res.status === 429 || res.status >= 500;
+    if (!retryable) break;
+    await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+  }
+  throw new Error(lastProblem);
+}
 
 async function listFiles(dir) {
   const key = path.join(CACHE, dir.replace(/[/]/g, "_") + "_index.json");

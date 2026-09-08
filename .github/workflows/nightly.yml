@@ -211,6 +211,14 @@ jobs:
       - name: Check the Test262 number fixture is current
         # Regenerates from tc39/test262 and fails if upstream has changed. Like
         # the Unicode check above, a failure here is news rather than a defect.
+        #
+        # The token is not for access - tc39/test262 is public - but for the
+        # rate limit. Unauthenticated api.github.com allows 60 requests an hour
+        # per source address, and Actions runners share addresses, so this step
+        # can be refused for traffic that is not ours. It was, on 2026-09-08,
+        # on its first call.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           node tools/test262/gen-number-fixture.mjs \
