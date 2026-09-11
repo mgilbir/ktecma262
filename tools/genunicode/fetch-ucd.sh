@@ -33,11 +33,20 @@ FILES=(
 EMOJI_FILES=(emoji-sequences.txt emoji-zwj-sequences.txt)
 EMOJI_BASE="https://www.unicode.org/Public/emoji/latest"
 
+# A bounded retry. unicode.org sits behind a CDN that intermittently answers 5xx
+# -- the nightly of 2026-09-11 got a 520 on the first file -- and a download that
+# fails for that reason reads as "upstream Unicode data changed", which is the
+# one message this job exists to send. Bounded deliberately: four attempts over
+# about half a minute, then fail loudly rather than retry into a hung job.
+#
+# --retry-all-errors matters because 520 is not in curl's own transient list.
+RETRY=(--retry 3 --retry-delay 5 --retry-all-errors --retry-connrefused)
+
 mkdir -p "$DIR/extracted" "$DIR/emoji"
 for f in "${FILES[@]}"; do
   # -f matters: without it a 404 HTML page is written to the file and the
   # generator sees an empty property rather than a download failure.
-  curl -fsS --max-time 120 -o "$DIR/$f" "$BASE/$f"
+  curl -fsS --max-time 120 "${RETRY[@]}" -o "$DIR/$f" "$BASE/$f"
   head -c 200 "$DIR/$f" | grep -qi '<!DOCTYPE\|<html' && {
     echo "error: $f is an HTML page, not UCD data" >&2
     exit 1
@@ -45,7 +54,7 @@ for f in "${FILES[@]}"; do
   printf '  %-45s %s\n' "$f" "ok"
 done
 for f in "${EMOJI_FILES[@]}"; do
-  curl -fsS --max-time 120 -o "$DIR/$f" "$EMOJI_BASE/$f"
+  curl -fsS --max-time 120 "${RETRY[@]}" -o "$DIR/$f" "$EMOJI_BASE/$f"
   head -c 200 "$DIR/$f" | grep -qi '<!DOCTYPE\|<html' && {
     echo "error: $f is an HTML page, not emoji data" >&2
     exit 1
