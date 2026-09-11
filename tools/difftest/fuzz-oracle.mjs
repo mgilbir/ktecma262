@@ -19,7 +19,7 @@
 //           "R <b64 result>"               replace result
 //           "S <count> <b64 part> ..."     split result ("-" for an undefined part)
 //           "T"                            oracle-side failure (not a spec behaviour)
-// A leading "!", "~" or "%" marks a known V8 defect the comparison skips.
+// A leading "!", "~", "%", "&" or "@" marks a known V8 defect the comparison skips.
 
 import readline from "node:readline";
 import {
@@ -75,6 +75,63 @@ function hasSurrogateSplitMatch(re, input, allMatches) {
   return false;
 }
 
+/** One operation's result, rendered. Factored out so it can be run twice - see hasDotAllInconsistency. */
+function runOp(re, op, input, extra) {
+  if (op === "x") {
+    re.lastIndex = 0;
+    const m = re.exec(input);
+    return m === null ? "N" : `M ${renderMatch(m)}`;
+  }
+  if (op === "a") {
+    // matchAll is the spec's own definition of "every non-overlapping match",
+    // including how it steps past an empty one.
+    const all = [...input.matchAll(re)];
+    return `A ${all.length} ${all.map(renderMatch).join(" | ")}`;
+  }
+  if (op === "r") {
+    re.lastIndex = 0;
+    return `R ${encode(input.replace(re, decode(extra)))}`;
+  }
+  re.lastIndex = 0;
+  const limit = Number(decode(extra));
+  const parts = limit < 0 ? input.split(re) : input.split(re, limit);
+  const rendered = parts.map((x) => (x === undefined ? "-" : encode(x)));
+  return `S ${parts.length} ${rendered.join(" ")}`;
+}
+
+const LINE_TERMINATOR = /[\n\r\u2028\u2029]/;
+
+/**
+ * A fifth V8 defect, detected by catching V8 contradicting itself.
+ *
+ * The `s` flag changes one thing: whether `.` matches a line terminator. So on
+ * an input containing no line terminator, adding or removing `s` cannot change
+ * any result - the two patterns accept exactly the same strings. V8 disagrees:
+ *
+ *   /(.*?\.^|)/.exec("")   is ""  at 0
+ *   /(.*?\.^|)/s.exec("")  is null
+ *
+ * On the empty string there is not even a character for `s` to reinterpret, so
+ * no reading of the specification makes both of those right. The empty
+ * alternative matches at 0 and the answer is "".
+ *
+ * Rather than guess at the syntactic trigger - a lazy `.*?` before `\.` and a
+ * `^`, as far as the minimisation goes - this runs the case both ways and
+ * flags it when V8's own two answers differ. That is narrow by construction:
+ * it can only fire where V8 is provably self-inconsistent.
+ */
+function hasDotAllInconsistency(re, op, input, extra) {
+  if (!re.flags.includes("s")) return false;
+  if (LINE_TERMINATOR.test(input)) return false;
+  try {
+    const withS = new RegExp(re.source, re.flags);
+    const withoutS = new RegExp(re.source, re.flags.replace("s", ""));
+    return runOp(withS, op, input, extra) !== runOp(withoutS, op, input, extra);
+  } catch {
+    return false;
+  }
+}
+
 const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
 /**
@@ -127,27 +184,11 @@ rl.on("line", (line) => {
           ? "%"
           : hasEndAnchorAstralMiss(pattern, flags, input)
             ? "&"
-            : "";
+            : hasDotAllInconsistency(re, op, input, extra)
+              ? "@"
+              : "";
 
-    if (op === "x") {
-      re.lastIndex = 0;
-      const m = re.exec(input);
-      emit(mark + (m === null ? "N" : `M ${renderMatch(m)}`));
-    } else if (op === "a") {
-      // matchAll is the spec's own definition of "every non-overlapping match",
-      // including how it steps past an empty one.
-      const all = [...input.matchAll(re)];
-      emit(mark + `A ${all.length} ${all.map(renderMatch).join(" | ")}`);
-    } else if (op === "r") {
-      re.lastIndex = 0;
-      emit(mark + `R ${encode(input.replace(re, decode(extra)))}`);
-    } else {
-      re.lastIndex = 0;
-      const limit = Number(decode(extra));
-      const parts = limit < 0 ? input.split(re) : input.split(re, limit);
-      const rendered = parts.map((x) => (x === undefined ? "-" : encode(x)));
-      emit(mark + `S ${parts.length} ${rendered.join(" ")}`);
-    }
+    emit(mark + runOp(re, op, input, extra));
   } catch {
     emit("T");
   }

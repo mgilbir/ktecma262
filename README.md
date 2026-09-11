@@ -787,6 +787,31 @@ boundaries with a sticky copy of the same pattern and skipping the case when
 sticky finds a match that plain `exec` missed — rather than guessing which
 patterns trigger it. Found by the nightly fuzzer, one case in 500,000.
 
+**A V8 defect where `s` changes a match it cannot affect.** The `s` flag governs
+exactly one thing: whether `.` matches a line terminator. On an input that
+contains none, adding or removing it cannot change any result, because the two
+patterns accept the same strings.
+
+```js
+/(.*?\.^|)/.exec("")    // "" at 0
+/(.*?\.^|)/s.exec("")   // null
+```
+
+On the empty string there is not even a character for `s` to reinterpret, so no
+reading of the specification makes both of those right — V8 contradicts itself.
+The answer is not in doubt either: the second alternative of `(.*?\.^|)` is
+empty, so the group matches the empty string at position 0 whatever the first
+alternative does, and here the first cannot match at all, since `\.` is a
+literal dot and the input has none.
+
+This engine gives `""` at 0 both ways, and `DotAllConsistencyTest` pins it down.
+As with the end-anchor defect, the harness detects this behaviourally rather
+than guessing the trigger: it runs the case with and without `s` and skips it
+only when V8's own two answers differ, which it can only do where V8 is
+provably inconsistent. Planting a deliberate `dotAll` bug still produces 115
+failures in 100,000 cases, so the skip does not cover for the engine. Found by
+the nightly fuzzer, one case in 500,000.
+
 ## Performance
 
 The engine parses to an AST, compiles to bytecode, and executes on a

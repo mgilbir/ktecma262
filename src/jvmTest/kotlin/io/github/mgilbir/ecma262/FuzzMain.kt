@@ -197,6 +197,23 @@ object FuzzMain {
     // ------------------------------------------------------------------ checking
 
     /** `index n g0 g1 …`, matching the oracle's renderMatch exactly. */
+    /**
+     * A fifth V8 defect, flagged by the oracle with "@".
+     *
+     * The `s` flag governs one thing: whether `.` matches a line terminator. On
+     * an input that contains none, adding or removing it cannot change any
+     * result. V8 disagrees - `/(.*?\.^|)/.exec("")` is "" at 0 and
+     * `/(.*?\.^|)/s.exec("")` is null - and on the empty string there is not
+     * even a character for `s` to reinterpret, so this is V8 contradicting
+     * itself rather than a reading of the specification. The empty alternative
+     * matches at 0; the answer is "".
+     *
+     * The oracle detects it by running the case with and without `s` and
+     * comparing, so the mark can only appear where V8 is provably inconsistent.
+     * DotAllConsistencyTest pins down what this engine does instead.
+     */
+    private fun isKnownV8DotAllDeviation(expected: String): Boolean = expected.startsWith("@")
+
     private fun renderMatchBody(m: MatchResult): String {
         val groups = (0 until m.size).joinToString(" ") { g ->
             m[g]?.let { encode(it) } ?: "-"
@@ -468,6 +485,7 @@ object FuzzMain {
         var skippedQuotedString = 0
         var skippedModifier = 0
         var skippedEndAnchor = 0
+        var skippedDotAll = 0
         var stepLimited = 0
         for (i in cases.indices) {
             if (isKnownV8SurrogateDeviation(results[i])) {
@@ -486,6 +504,10 @@ object FuzzMain {
                 skippedEndAnchor++
                 continue
             }
+            if (isKnownV8DotAllDeviation(results[i])) {
+                skippedDotAll++
+                continue
+            }
             val failure = check(cases[i], results[i]) ?: continue
             if ("step limit exceeded" in failure) {
                 // The engine bounds backtracking and node does not; that is the
@@ -501,6 +523,7 @@ object FuzzMain {
             if (skippedQuotedString > 0) add("$skippedQuotedString skipped: V8 \\q{} folding defect")
             if (skippedModifier > 0) add("$skippedModifier skipped: V8 modifier scoping defect")
             if (skippedEndAnchor > 0) add("$skippedEndAnchor skipped: V8 end-anchor astral defect")
+            if (skippedDotAll > 0) add("$skippedDotAll skipped: V8 dotAll inconsistency")
             if (screenedOut > 0) add("$screenedOut screened out: exceed this engine's step budget")
             if (stepLimited > 0) add("$stepLimited step-limited")
         }
