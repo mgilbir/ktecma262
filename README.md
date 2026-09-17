@@ -592,6 +592,38 @@ node tools/genunicode/verify-against-node.mjs \
 The verifier compares every property against the host JavaScript engine and
 refuses to write the fixture unless all of them agree.
 
+### Emoji data runs ahead of the engines
+
+The UCD is pinned to a version. The two files behind the `v` flag's properties
+of strings — `emoji-sequences.txt` and `emoji-zwj-sequences.txt` — are not: they
+live under `/Public/emoji/latest`, and Unicode publishes that ahead of the
+engines. On 2026-09-17 it became Emoji 18.0 while node was still on Unicode
+17.0.
+
+Regenerating from it would have been actively wrong. The new data adds nineteen
+sequences — U+1F6D9, U+1FA8B..U+1FA8D, U+1FACC, U+1FAF9 with each skin-tone
+modifier, among others — that no shipping engine recognises:
+
+```js
+/^\p{RGI_Emoji}$/v.test("\u{1F6D9}")   // false in node 17.0
+```
+
+Taking them would have made `\p{RGI_Emoji}` match strings that V8, and every
+other current engine, does not — while the whole table is verified against node
+as its oracle. Emoji 17.0 is not archived under a numbered directory, so it
+cannot be pinned by URL either.
+
+So `fetch-ucd.sh` records the version the emoji files declare, and the drift job
+compares the emoji-derived properties only while that version matches the one
+the tables target. When it has run ahead, those properties are reported as a
+notice instead, and everything the pinned UCD produces is still compared
+exactly — a planted change to `Alphabetic` still fails the check with the
+exclusion in force.
+
+The trigger to move is node, not the calendar. When it ships a new Unicode
+version, `check-node-unicode.sh` fails, and the UCD pin, the emoji data and the
+tables are bumped together.
+
 ## Testing
 
 ```bash

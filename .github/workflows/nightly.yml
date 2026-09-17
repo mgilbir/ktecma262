@@ -181,9 +181,30 @@ jobs:
           src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt
 
       - name: Fail if the committed tables are stale
+        # The UCD is pinned, but the two emoji sequence files are not: they come
+        # from /Public/emoji/latest, which Unicode moves ahead of the engines.
+        # On 2026-09-17 it became Emoji 18.0 while node was still on Unicode
+        # 17.0, and regenerating would have added nineteen sequences that no
+        # shipping engine matches - breaking agreement with the very oracle the
+        # tables are verified against. So when the emoji version has run ahead,
+        # the emoji-derived properties are reported rather than compared, and
+        # everything the pinned UCD produces is still checked exactly.
+        #
+        # The trigger to move is node, not the calendar: when it ships a new
+        # Unicode version, check-node-unicode.sh fails and everything is bumped
+        # together.
         run: |
           set -euo pipefail
-          if ! ./.github/scripts/check-regenerated.sh \
+          expected_emoji=17.0
+          got_emoji=$(cat "$RUNNER_TEMP/ucd/EMOJI_VERSION")
+          ignore=""
+          if [ "$got_emoji" != "$expected_emoji" ]; then
+            echo "::notice::Emoji latest is $got_emoji; these tables target $expected_emoji to match node's Unicode version."
+            echo "Not comparing the emoji-derived properties of strings: upstream is ahead of every engine."
+            echo "They will be compared again once node ships the matching Unicode version."
+            ignore='^[[:space:]]*"(Basic_Emoji|Emoji_Keycap_Sequence|RGI_Emoji|RGI_Emoji_Flag_Sequence|RGI_Emoji_Modifier_Sequence|RGI_Emoji_Tag_Sequence|RGI_Emoji_ZWJ_Sequence)" to "'
+          fi
+          if ! ./.github/scripts/check-regenerated.sh ${ignore:+--ignore "$ignore"} \
               src/commonMain/kotlin/io/github/mgilbir/ecma262/unicode/UnicodeTables.kt; then
             echo "Upstream Unicode data has changed. Regenerate and re-verify:"
             echo "  see the Unicode section of README.md"

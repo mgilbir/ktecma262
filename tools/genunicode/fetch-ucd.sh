@@ -30,6 +30,13 @@ FILES=(
 
 # The `v` flag's properties of strings come from the UTS #51 emoji files, which
 # are versioned separately from the UCD and live under /Public/emoji/.
+#
+# `latest` is a moving target and Unicode publishes it ahead of the engines: on
+# 2026-09-17 it became Emoji 18.0 while node was still on Unicode 17.0, adding
+# nineteen sequences no shipping engine recognised. Emoji 17.0 is not archived
+# under a numbered directory, so it cannot simply be pinned by URL. What this
+# does instead is record the version it actually got, so the caller can decide
+# whether the emoji-derived properties are comparable at all.
 EMOJI_FILES=(emoji-sequences.txt emoji-zwj-sequences.txt)
 EMOJI_BASE="https://www.unicode.org/Public/emoji/latest"
 
@@ -62,4 +69,12 @@ for f in "${EMOJI_FILES[@]}"; do
   printf '  %-45s %s\n' "$f" "ok"
 done
 
-echo "UCD $VERSION + emoji sequences downloaded to $DIR"
+# The version the emoji files declare, written where the caller can read it.
+emoji_version=$(grep -m1 '^# Version:' "$DIR/emoji-sequences.txt" | sed 's/^# Version:[[:space:]]*//')
+if [ -z "$emoji_version" ]; then
+  echo "error: emoji-sequences.txt declares no version" >&2
+  exit 1
+fi
+printf '%s\n' "$emoji_version" > "$DIR/EMOJI_VERSION"
+
+echo "UCD $VERSION + emoji sequences (Emoji $emoji_version) downloaded to $DIR"

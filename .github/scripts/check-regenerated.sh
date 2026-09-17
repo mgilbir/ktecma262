@@ -15,13 +15,31 @@
 # If node's behaviour actually changed, those move and this still fails.
 set -euo pipefail
 
+IGNORE=""
+if [ "${1:-}" = "--ignore" ]; then
+  # An extended regex for lines to leave out of the comparison, for the case
+  # where part of a generated file legitimately cannot be reproduced right now.
+  # The caller has to say why in its own output; this only does what it is told.
+  IGNORE="${2:?--ignore needs a pattern}"
+  shift 2
+fi
+
 if [ $# -eq 0 ]; then
-  echo "usage: check-regenerated.sh <file> [file...]" >&2
+  echo "usage: check-regenerated.sh [--ignore <regex>] <file> [file...]" >&2
   exit 2
 fi
 
 # Lines that record where a file came from rather than what is in it.
 PROVENANCE='^(//|\s*//)?\s*(Produced by|internal const val ORACLE)'
+
+# One filter, built from the provenance rule plus anything the caller excluded.
+filter() {
+  if [ -n "$IGNORE" ]; then
+    grep -Ev "$PROVENANCE" | grep -Ev "$IGNORE"
+  else
+    grep -Ev "$PROVENANCE"
+  fi
+}
 
 status=0
 for file in "$@"; do
@@ -31,14 +49,14 @@ for file in "$@"; do
     continue
   fi
   if diff -q \
-      <(printf '%s\n' "$committed" | grep -Ev "$PROVENANCE") \
-      <(grep -Ev "$PROVENANCE" "$file") > /dev/null; then
+      <(printf '%s\n' "$committed" | filter) \
+      <(filter < "$file") > /dev/null; then
     echo "  unchanged: $file"
   else
     echo "::error::$file changed when regenerated from upstream."
     diff -u \
-      <(printf '%s\n' "$committed" | grep -Ev "$PROVENANCE") \
-      <(grep -Ev "$PROVENANCE" "$file") | head -40 || true
+      <(printf '%s\n' "$committed" | filter) \
+      <(filter < "$file") | head -40 || true
     status=1
   fi
 done
